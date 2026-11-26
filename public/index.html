@@ -109,7 +109,7 @@ label>*{margin-top:6px}
     </div>
     <div class="status">
       <div class="pill" id="conn"><span class="dot"></span><span id="connTxt">Connecting to Tangem…</span></div>
-      <div class="bal"><span class="mut">USDT balance</span><b id="usdt">—</b></div>
+      <div class="bal"><span class="mut">Stablecoin balance</span><b id="stableBal">—</b></div>
       <button id="pauseAll" class="pauseall" type="button">Pause all</button>
     </div>
   </div>
@@ -129,7 +129,7 @@ label>*{margin-top:6px}
         <label>Pay with<select id="from"></select></label>
         <label>Buy<select id="to"></select></label>
       </div>
-      <label>Amount per buy<div class="amt"><input id="amount" inputmode="decimal" value="10" autocomplete="off"><span id="amtSym">USDT</span></div></label>
+      <label>Amount per buy<div class="amt"><input id="amount" inputmode="decimal" value="10" autocomplete="off"><span id="amtSym">USDC</span></div></label>
       <div class="chips" id="chips"><button type="button" data-v="10">10</button><button type="button" data-v="25">25</button><button type="button" data-v="40">40</button><button type="button" data-v="max">Max</button></div>
       <div id="recurBox">
         <label>Buy every<div class="row2"><input id="every" type="number" min="1" step="1" value="7"><select id="unit"><option value="1">minutes</option><option value="60">hours</option><option value="1440" selected>days</option><option value="10080">weeks</option></select></div></label>
@@ -270,11 +270,15 @@ function setConn(state, text) { $('conn').className = 'pill ' + state; $('connTx
 function fillTokens() {
   const opts = tokens.map(t => `<option value="${esc(keyOf(t))}">${esc(t.symbol)} · ${esc(t.networkId)}</option>`).join('');
   $('from').innerHTML = opts; $('to').innerHTML = opts;
-  const usdt = tokens.find(t => t.symbol === 'USDT'), hype = tokens.find(t => t.symbol === 'HYPE');
-  if (usdt) $('from').value = keyOf(usdt);
+  // Default "Pay with": the USDC holding the most (a wallet can hold USDC on several networks), else USDT.
+  const most = sym => tokens.filter(t => t.symbol === sym).sort((a, b) => (Number(b.balance) || 0) - (Number(a.balance) || 0))[0];
+  const stable = most('USDC') || most('USDT'), hype = tokens.find(t => t.symbol === 'HYPE');
+  if (stable) $('from').value = keyOf(stable);
   const to = hype || tokens.find(t => keyOf(t) !== $('from').value);
   if (to) $('to').value = keyOf(to);
-  $('usdt').textContent = usdt && usdt.balance != null ? `${fmt(usdt.balance)} USDT` : '—';
+  // Total of every USDC and USDT balance the wallet reports, across networks.
+  const known = tokens.filter(t => (t.symbol === 'USDC' || t.symbol === 'USDT') && t.balance != null);
+  $('stableBal').textContent = known.length ? `${fmt(known.reduce((sum, t) => sum + Number(t.balance), 0))} USD` : '—';
   syncSyms();
 }
 function syncSyms() { $('amtSym').textContent = sym($('from').value); $('minSym').textContent = sym($('to').value); }
