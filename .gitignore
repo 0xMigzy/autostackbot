@@ -5,3 +5,6 @@ prices.json
 tangem-schemas.json
 .env
 *.json.tmp
+
+.vercel
+.env*
