@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Auto-Stack</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<style>
+/* VOICE: calm, precise money tool; the user stays in control of every buy
+   IDEA: a coin stack that grows one approved buy at a time
+   PICTURE: the working app itself, with a coin-stack mark and progress meters
+   COLOUR+TYPE: deep forest-black ground, mint for growth, coral for stop; Manrope, tabular figures
+   LAYOUT: status bar on top, plan builder left, active plans right, history full width below */
+:root{color-scheme:dark;--bg:#0b110f;--s1:#121a17;--s2:#18221e;--line:#24322c;--ink:#e8f0eb;--mut:#93a79e;--mint:#4fd1a1;--mintd:#173a2d;--coral:#ff6b5a;--corald:#3a1c18;--r:16px}
+:root[data-theme=light],:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 Manrope,system-ui,sans-serif;overflow-x:clip;font-variant-numeric:tabular-nums}
+.band{padding:clamp(18px,3vw,36px) max(4vw,16px)}
+.wrap{max-width:1240px;margin:0 auto}
+h1{font-size:clamp(30px,4vw,44px);line-height:1.05;margin:0;letter-spacing:-.02em;text-wrap:balance}
+h2{font-size:20px;margin:0 0 14px}
+.mut{color:var(--mut)}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer;border-radius:12px;border:1px solid var(--line);background:var(--s2);min-height:44px;padding:0 16px;font-weight:600}
+button:hover{border-color:#3a4c44}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--mint);outline-offset:2px}
+button:disabled{opacity:.5;cursor:not-allowed}
+input,select{width:100%;min-height:46px;font-size:16px;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:0 12px}
+label{display:block;font-size:14px;color:var(--mut);font-weight:600;margin-bottom:14px}
+label>*{margin-top:6px}
+.top{border-bottom:1px solid var(--line);background:linear-gradient(180deg,#0f1915,var(--bg))}
+.top .wrap{display:flex;flex-wrap:wrap;gap:20px;align-items:center;justify-content:space-between}
+.brand{display:flex;gap:16px;align-items:center}
+.brand svg{width:56px;height:56px;flex:none}
+.brand p{margin:4px 0 0;font-size:15px}
+.status{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.pill{display:flex;gap:8px;align-items:center;padding:8px 14px;border-radius:999px;background:var(--s1);border:1px solid var(--line);font-size:14px;font-weight:600}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--mut)}
+.ok .dot{background:var(--mint);box-shadow:0 0 0 4px var(--mintd)}
+.err .dot{background:var(--coral)}
+.bal{padding:6px 14px;border-left:1px solid var(--line)}
+.bal span{display:block;font-size:13px}.bal b{font-size:22px;white-space:nowrap}
+.pauseall{background:var(--coral);border-color:var(--coral);color:#1b0a07;min-height:52px;padding:0 24px;font-size:17px;font-weight:800}
+.pauseall.on{background:var(--mint);border-color:var(--mint)}
+.demo{background:#14231d;color:var(--mint);font-size:14px;text-align:center;padding:9px 16px;border-bottom:1px solid var(--line)}
+.demo code{background:var(--bg);padding:1px 6px;border-radius:6px}
+.paused-note{background:var(--corald);color:#ffb3a8;text-align:center;font-weight:700;padding:10px 16px}
+.grid{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:20px;align-items:start}
+.card{background:var(--s1);border:1px solid var(--line);border-radius:var(--r);padding:clamp(16px,2.4vw,24px)}
+.wide{grid-column:1/-1}
+.tabs{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;background:var(--bg);border-radius:14px;margin-bottom:18px}
+.tabs button{border:0;background:none;color:var(--mut)}
+.tabs button[aria-selected=true]{background:var(--s2);color:var(--ink);box-shadow:inset 0 0 0 1px var(--line)}
+.row2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
+.amt{position:relative}.amt input{padding-right:70px;font-size:18px;font-weight:700}
+.amt span{position:absolute;right:12px;top:50%;transform:translateY(-50%);color:var(--mut);font-weight:700;font-size:14px;margin:0}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin:-6px 0 16px}
+.chips button{min-height:36px;padding:0 14px;font-size:14px;border-radius:999px}
+.quote{display:grid;gap:2px;background:var(--bg);border:1px dashed var(--line);border-radius:14px;padding:14px 16px;margin:4px 0 16px}
+.quote span{font-size:13px}.quote b{font-size:26px;line-height:1.2;color:var(--mint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.quote.bad b{color:var(--coral);font-size:16px;white-space:normal}
+.link{background:none;border:0;color:var(--mint);padding:0;min-height:32px;font-size:14px}
+.primary{width:100%;background:var(--mint);border-color:var(--mint);color:#06150f;font-weight:800;font-size:17px;min-height:52px}
+.fine{font-size:13px;color:var(--mut);margin:10px 0 0;text-align:center}
+.plan{border:1px solid var(--line);border-radius:14px;padding:16px;background:var(--s2);margin-bottom:12px}
+.plan.is-paused{opacity:.6}
+.ptop{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:baseline}
+.ptop b{font-size:18px}
+.tag{font-size:12px;font-weight:800;padding:3px 9px;border-radius:999px;background:var(--mintd);color:var(--mint)}
+.tag.limit{background:#1d2633;color:#9cc3ff}
+.tag.off{background:var(--corald);color:#ffb3a8}
+.pstat{margin:8px 0 10px;font-size:15px}
+.pstat b{white-space:nowrap}
+.meter{height:8px;border-radius:99px;background:var(--bg);overflow:hidden;margin-bottom:12px}
+.meter i{display:block;height:100%;background:var(--mint);border-radius:99px;transition:width .6s}
+.pact{display:flex;flex-wrap:wrap;gap:8px}
+.pact button{min-height:40px;font-size:14px;padding:0 14px}
+.pact .danger{color:var(--coral)}
+.pact .go{color:var(--mint)}
+.edit{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:4px 0 12px}
+.edit .amt{flex:1 1 160px}
+.edit input{min-height:40px}
+.empty{color:var(--mut);text-align:center;padding:28px 12px;border:1px dashed var(--line);border-radius:14px}
+.hist{display:grid;gap:10px}
+.hrow{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1.4fr) minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:var(--s2)}
+.hrow small{display:block;color:var(--mut);font-size:13px}
+.st{font-size:13px;font-weight:700;padding:4px 10px;border-radius:999px;white-space:nowrap;justify-self:start}
+.st.wait{background:#2b2a17;color:#f0dc82}.st.done{background:var(--mintd);color:var(--mint)}.st.fail{background:var(--corald);color:#ffb3a8}
+.qrbox{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:16px;align-items:center;padding-top:6px}
+.qrbox .qr{background:#fff;border-radius:12px;padding:8px;width:164px;flex:none}
+.qrbox .qr svg,.qrbox .qr img{display:block;width:100%;height:auto}
+.qrbox code{overflow-wrap:anywhere;font-size:13px;color:var(--mut)}
+#toast{position:fixed;left:50%;bottom:20px;transform:translate(-50%,calc(100% + 40px));visibility:hidden;background:var(--ink);color:var(--bg);padding:12px 18px;border-radius:12px;font-weight:700;max-width:min(92vw,520px);transition:transform .25s;z-index:9}
+#toast.show{transform:translate(-50%,0);visibility:visible}#toast.bad{background:var(--coral);color:#1b0a07}
+@media(max-width:860px){.grid{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:600px){.hrow{grid-template-columns:minmax(0,1fr) auto}.hrow .hide-sm{display:none}.bal{border-left:0;padding-left:0}.pauseall{flex:1 1 100%}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<header class="top band">
+  <div class="wrap">
+    <div class="brand">
+      <svg viewBox="0 0 56 56" aria-hidden="true"><g fill="none" stroke-width="2"><ellipse cx="28" cy="40" rx="16" ry="6" fill="#173a2d" stroke="#4fd1a1"/><path d="M12 34v6m32-6v6" stroke="#4fd1a1"/><ellipse cx="28" cy="31" rx="16" ry="6" fill="#1d4a39" stroke="#4fd1a1"/><path d="M12 25v6m32-6v6" stroke="#4fd1a1"/><ellipse cx="28" cy="22" rx="16" ry="6" fill="#256049" stroke="#4fd1a1"/><path d="M28 4v9m-4-4 4 4 4-4" stroke="#e8f0eb" stroke-linecap="round" stroke-linejoin="round"/></g></svg>
+      <div><h1>Auto-Stack</h1><p class="mut">Recurring and limit buys from your Tangem wallet. You approve every one.</p></div>
+    </div>
+    <div class="status">
+      <div class="pill" id="conn"><span class="dot"></span><span id="connTxt">Connecting to Tangem…</span></div>
+      <div class="bal"><span class="mut">USDT balance</span><b id="usdt">—</b></div>
+      <button id="pauseAll" class="pauseall" type="button">Pause all</button>
+    </div>
+  </div>
+</header>
+<div id="demoBar" class="demo" hidden>Live demo with sample data. To use your own Tangem wallet, run Auto-Stack on your computer with <code>npm start</code>.</div>
+<div id="pausedNote" class="paused-note" hidden>All plans are paused. Nothing will be prepared until you resume.</div>
+
+<main class="band"><div class="wrap grid">
+  <section class="card" aria-labelledby="np">
+    <h2 id="np">New plan</h2>
+    <div class="tabs" role="tablist">
+      <button type="button" role="tab" id="tab-recurring" aria-selected="true">Recurring</button>
+      <button type="button" role="tab" id="tab-limit" aria-selected="false">Limit</button>
+    </div>
+    <form id="planForm" novalidate>
+      <div class="row2">
+        <label>Pay with<select id="from"></select></label>
+        <label>Buy<select id="to"></select></label>
+      </div>
+      <label>Amount per buy<div class="amt"><input id="amount" inputmode="decimal" value="10" autocomplete="off"><span id="amtSym">USDT</span></div></label>
+      <div class="chips" id="chips"><button type="button" data-v="10">10</button><button type="button" data-v="25">25</button><button type="button" data-v="40">40</button><button type="button" data-v="max">Max</button></div>
+      <div id="recurBox">
+        <label>Buy every<div class="row2"><input id="every" type="number" min="1" step="1" value="7"><select id="unit"><option value="1">minutes</option><option value="60">hours</option><option value="1440" selected>days</option><option value="10080">weeks</option></select></div></label>
+      </div>
+      <div id="limitBox" hidden>
+        <label>Buy when I get at least<div class="amt"><input id="minRecv" inputmode="decimal" placeholder="0.00" autocomplete="off"><span id="minSym">HYPE</span></div></label>
+        <button type="button" class="link" id="useCurrent">Use the current best quote</button>
+      </div>
+      <div class="quote" id="quote" aria-live="polite"><span class="mut">Best quote right now</span><b id="qAmt">—</b><span class="mut" id="qVia">&nbsp;</span></div>
+      <button class="primary" type="submit" id="create">Create plan</button>
+      <p class="fine">Each buy is prepared for you, then waits for your approval in the Tangem app.</p>
+    </form>
+  </section>
+
+  <section class="card" aria-labelledby="ap">
+    <h2 id="ap">Active plans</h2>
+    <div id="plans"><div class="empty">No plans yet. Create one on the left.</div></div>
+  </section>
+
+  <section class="card wide" aria-labelledby="hi">
+    <h2 id="hi">History</h2>
+    <div id="history" class="hist"><div class="empty">Prepared buys will appear here.</div></div>
+  </section>
+</div></main>
+<div id="toast" role="status"></div>
+
+<script>
+{
+const $ = id => document.getElementById(id);
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt = v => { const n = Number(v); if (!isFinite(n)) return '—'; const d = n >= 100 ? 2 : n >= 1 ? 4 : 6; return n.toLocaleString('en-GB', {maximumFractionDigits: d}); };
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const keyOf = t => t.key || `${t.networkId}:${t.contractAddress || '0'}`;
+
+/* ---------- Demo back end: used only when the real server is not reachable ---------- */
+const Demo = (() => {
+  const now = () => Date.now();
+  const T = [
+    {symbol:'USDT', name:'Tether USD', networkId:'arbitrum-one', decimals:6, contractAddress:'0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9', balance:'40.00', usd:1},
+    {symbol:'HYPE', name:'Hyperliquid', networkId:'hyperevm', decimals:18, contractAddress:'0', balance:'0.1632', usd:60},
+    {symbol:'ETH', name:'Ethereum', networkId:'arbitrum-one', decimals:18, contractAddress:'0', balance:'0.0018', usd:3000},
+    {symbol:'USDC', name:'USD Coin', networkId:'base', decimals:6, contractAddress:'0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', balance:'0.00', usd:1}
+  ].map(t => ({...t, key: keyOf(t), address: '0x7a3F…91cE'}));
+  const P = [{id:'changenow',name:'ChangeNOW',type:'cex',fee:.011,min:10},{id:'changelly',name:'Changelly',type:'cex',fee:.013,min:10},{id:'simpleswap',name:'SimpleSwap',type:'cex',fee:.016,min:15}];
+  const tk = k => T.find(t => t.key === k);
+  function quote(f, t, amt) {
+    const a = Number(amt), F = tk(f), To = tk(t);
+    if (!F || !To || !(a > 0)) return {best:null, quotes:[]};
+    const drift = 1 + Math.sin(now() / 30000) * .006;
+    const quotes = P.map(p => a < p.min
+      ? {provider:p.id, providerName:p.name, type:p.type, error:`Below ${p.name}'s minimum of ${p.min} ${F.symbol}`}
+      : {provider:p.id, providerName:p.name, type:p.type, rateType:'float', toAmount:(a * F.usd / To.usd * (1 - p.fee) * drift).toFixed(6)});
+    const ok = quotes.filter(q => !q.error).sort((x, y) => y.toAmount - x.toAmount);
+    return {best: ok[0] || null, quotes};
+  }
+  let paused = false, seq = 3, timer;
+  const plans = [
+    {id:'p1', type:'recurring', from:T[0].key, to:T[1].key, amount:'10', everyMinutes:10080, nextRunAt:new Date(now() + 2*864e5 + 5*36e5).toISOString(), paused:false, status:'active'},
+    {id:'p2', type:'limit', from:T[0].key, to:T[1].key, amount:'15', minReceive:'0.2520', paused:false, status:'active', lastQuote:null}
+  ];
+  const hist = [
+    {id:'h2', time:new Date(now() - 4*6e4).toISOString(), planId:'p1', from:T[0].key, to:T[1].key, amount:'10', toAmount:'0.164512', providerName:'ChangeNOW', intentId:'demo-2', deeplink:'tangem://express/intent/demo-2', status:'CREATED'},
+    {id:'h1', time:new Date(now() - 7*864e5).toISOString(), planId:'p1', from:T[0].key, to:T[1].key, amount:'10', toAmount:'0.163170', providerName:'ChangeNOW', intentId:'demo-1', deeplink:'tangem://express/intent/demo-1', status:'COMPLETED'}
+  ];
+  function fire(p) {
+    const q = quote(p.from, p.to, p.amount);
+    if (!q.best) { p.status = 'error'; p.error = 'No provider can do this amount'; return null; }
+    const id = 'demo-' + (++seq);
+    const h = {id:'h' + seq, time:new Date().toISOString(), planId:p.id, from:p.from, to:p.to, amount:p.amount, toAmount:q.best.toAmount, providerName:q.best.providerName, intentId:id, deeplink:'tangem://express/intent/' + id, status:'CREATED', created:now()};
+    hist.unshift(h); return h;
+  }
+  function tick() {
+    if (!paused) for (const p of plans) {
+      if (p.paused || p.status !== 'active') continue;
+      if (p.type === 'recurring' && Date.parse(p.nextRunAt) <= now()) { fire(p); p.nextRunAt = new Date(now() + p.everyMinutes * 6e4).toISOString(); }
+      if (p.type === 'limit') {
+        const q = quote(p.from, p.to, p.amount);
+        p.lastQuote = q.best && {toAmount:q.best.toAmount, providerName:q.best.providerName, at:new Date().toISOString()};
+        if (q.best && Number(q.best.toAmount) >= Number(p.minReceive)) { fire(p); p.status = 'done'; }
+      }
+    }
+    for (const h of hist) if (h.status === 'CREATED' && h.created && now() - h.created > 20000) h.status = 'COMPLETED';
+  }
+  async function handle(m, path, b = {}) {
+    await sleep(180);
+    const seg = path.split('/').filter(Boolean); // api, plans, id, action
+    const plan = seg[2] && plans.find(p => p.id === seg[2]);
+    if (m === 'GET' && path === '/api/wallet') return {tokens:T};
+    if (m === 'POST' && path === '/api/quote') return quote(b.from, b.to, b.amount);
+    if (m === 'GET' && path === '/api/plans') { tick(); return {plans, pausedAll:paused}; }
+    if (m === 'POST' && path === '/api/plans') {
+      const p = {id:'p' + (++seq), type:b.type, from:b.from, to:b.to, amount:String(b.amount), paused:false, status:'active'};
+      if (b.type === 'recurring') { p.everyMinutes = b.everyMinutes; p.nextRunAt = new Date(now() + b.everyMinutes * 6e4).toISOString(); }
+      else { p.minReceive = String(b.minReceive); p.lastQuote = null; }
+      plans.unshift(p); tick(); return p;
+    }
+    if (m === 'PATCH' && plan) { Object.assign(plan, b); if (b.everyMinutes) plan.nextRunAt = new Date(now() + b.everyMinutes * 6e4).toISOString(); return plan; }
+    if (m === 'POST' && plan && seg[3] === 'pause') { plan.paused = !plan.paused; return plan; }
+    if (m === 'POST' && plan && seg[3] === 'run-now') {
+      if (paused) throw new Error('Resume all plans first');
+      const h = fire(plan); if (!h) throw new Error(plan.error);
+      if (plan.type === 'recurring') plan.nextRunAt = new Date(now() + plan.everyMinutes * 6e4).toISOString(); else plan.status = 'done';
+      return h;
+    }
+    if (m === 'DELETE' && plan) { plans.splice(plans.indexOf(plan), 1); return {ok:true}; }
+    if (m === 'POST' && path === '/api/pause-all') { paused = !!b.paused; return {pausedAll:paused}; }
+    if (m === 'GET' && path === '/api/history') { tick(); return {items:hist}; }
+    if (m === 'GET' && seg[1] === 'intent') { const h = hist.find(x => x.intentId === seg[2]); return {status: h ? h.status : 'UNKNOWN'}; }
+    throw new Error('Not found');
+  }
+  return {handle, start(){ timer = setInterval(tick, 3000); }};
+})();
+
+/* ---------- API ---------- */
+let DEMO = false;
+async function realFetch(method, path, body) {
+  let r;
+  try { r = await fetch(path, {method, headers:{'Content-Type':'application/json'}, body: body ? JSON.stringify(body) : undefined}); }
+  catch (e) { throw Object.assign(new Error('Server not reachable'), {server:false}); }
+  const isJson = (r.headers.get('content-type') || '').includes('json');
+  const data = isJson ? await r.json().catch(() => ({})) : null;
+  if (!isJson) throw Object.assign(new Error(`HTTP ${r.status}`), {server:false});
+  if (r.status === 401) { setConn('err', 'Tangem login expired. Restart the server and scan the QR again'); throw Object.assign(new Error('Tangem login expired'), {server:true}); }
+  if (!r.ok) throw Object.assign(new Error(data.error || `HTTP ${r.status}`), {server:true});
+  return data;
+}
+const api = (m, p, b) => DEMO ? Demo.handle(m, p, b) : realFetch(m, p, b);
+
+/* ---------- State ---------- */
+let tokens = [], plans = [], history = [], pausedAll = false, tab = 'recurring', lastBest = null, editing = null;
+const tokMap = () => Object.fromEntries(tokens.map(t => [keyOf(t), t]));
+function sym(x) { if (!x) return '?'; if (typeof x === 'object') return x.symbol || '?'; const t = tokMap()[x]; return t ? t.symbol : String(x).split(':')[0]; }
+
+function toast(msg, bad) { const t = $('toast'); t.textContent = msg; t.className = 'show' + (bad ? ' bad' : ''); clearTimeout(toast.h); toast.h = setTimeout(() => t.className = '', 3800); }
+function setConn(state, text) { $('conn').className = 'pill ' + state; $('connTxt').textContent = text; }
+
+/* ---------- Form ---------- */
+function fillTokens() {
+  const opts = tokens.map(t => `<option value="${esc(keyOf(t))}">${esc(t.symbol)} · ${esc(t.networkId)}</option>`).join('');
+  $('from').innerHTML = opts; $('to').innerHTML = opts;
+  const usdt = tokens.find(t => t.symbol === 'USDT'), hype = tokens.find(t => t.symbol === 'HYPE');
+  if (usdt) $('from').value = keyOf(usdt);
+  const to = hype || tokens.find(t => keyOf(t) !== $('from').value);
+  if (to) $('to').value = keyOf(to);
+  $('usdt').textContent = usdt && usdt.balance != null ? `${fmt(usdt.balance)} USDT` : '—';
+  syncSyms();
+}
+function syncSyms() { $('amtSym').textContent = sym($('from').value); $('minSym').textContent = sym($('to').value); }
+function setTab(t) {
+  tab = t;
+  $('tab-recurring').setAttribute('aria-selected', t === 'recurring');
+  $('tab-limit').setAttribute('aria-selected', t === 'limit');
+  $('recurBox').hidden = t !== 'recurring'; $('limitBox').hidden = t !== 'limit';
+}
+let qTimer, qSeq = 0;
+function queueQuote() { clearTimeout(qTimer); qTimer = setTimeout(getQuote, 500); }
+async function getQuote() {
+  const from = $('from').value, to = $('to').value, amount = $('amount').value.trim(), my = ++qSeq, box = $('quote');
+  lastBest = null; box.classList.remove('bad');
+  if (!from || !to || from === to || !(Number(amount) > 0)) { $('qAmt').textContent = '—'; $('qVia').textContent = from === to ? 'Pick two different tokens' : 'Enter an amount'; return; }
+  $('qVia').textContent = 'Checking providers…';
+  try {
+    const q = await api('POST', '/api/quote', {from, to, amount});
+    if (my !== qSeq) return;
+    if (q.best) {
+      lastBest = q.best;
+      $('qAmt').textContent = `${fmt(q.best.toAmount)} ${sym(to)}`;
+      $('qVia').textContent = `via ${q.best.providerName || q.best.provider} · ${(q.quotes || []).filter(x => !x.error).length} of ${(q.quotes || []).length} providers quoted`;
+    } else {
+      box.classList.add('bad');
+      $('qAmt').textContent = (q.quotes || []).find(x => x.error)?.error || 'No provider can do this swap';
+      $('qVia').textContent = 'Try a larger amount or another token';
+    }
+  } catch (e) { if (my === qSeq) { box.classList.add('bad'); $('qAmt').textContent = e.message; $('qVia').textContent = ''; } }
+}
+
+/* ---------- Plans ---------- */
+function countdown(iso) {
+  let s = Math.max(0, Math.floor((Date.parse(iso) - Date.now()) / 1000));
+  if (!s) return 'any moment';
+  const d = Math.floor(s / 86400); s %= 86400; const h = Math.floor(s / 3600); s %= 3600; const m = Math.floor(s / 60); s %= 60;
+  return d ? `${d}d ${h}h ${m}m` : h ? `${h}h ${m}m` : `${m}m ${s}s`;
+}
+function everyText(min) {
+  const n = Number(min);
+  if (n % 10080 === 0) return n === 10080 ? 'every week' : `every ${n / 10080} weeks`;
+  if (n % 1440 === 0) return n === 1440 ? 'every day' : `every ${n / 1440} days`;
+  if (n % 60 === 0) return n === 60 ? 'every hour' : `every ${n / 60} hours`;
+  return n === 1 ? 'every minute' : `every ${n} minutes`;
+}
+function planHTML(p) {
+  const f = sym(p.from), t = sym(p.to), id = esc(p.id), off = p.paused || pausedAll, done = p.status === 'done', err = p.status === 'error';
+  let stat, meter = '';
+  if (err) stat = `<span style="color:var(--coral)">Stopped: ${esc(p.error || 'error')}</span>`;
+  else if (done) stat = `Target reached. Buy prepared, see history.`;
+  else if (off) stat = `Paused`;
+  else if (p.type === 'recurring') {
+    stat = `Next buy in <b data-count="${esc(p.nextRunAt)}">${esc(countdown(p.nextRunAt))}</b>`;
+    const total = Number(p.everyMinutes) * 6e4, left = Date.parse(p.nextRunAt) - Date.now();
+    meter = `<div class="meter"><i style="width:${Math.max(2, Math.min(100, 100 - left / total * 100)).toFixed(1)}%"></i></div>`;
+  } else {
+    const cur = p.lastQuote && Number(p.lastQuote.toAmount), tgt = Number(p.minReceive);
+    stat = `Waiting for ≥ <b>${esc(fmt(tgt))} ${esc(t)}</b> · current <b>${cur ? esc(fmt(cur)) : '…'}</b>`;
+    if (cur) meter = `<div class="meter"><i style="width:${Math.min(100, cur / tgt * 100).toFixed(1)}%"></i></div>`;
+  }
+  const what = p.type === 'recurring' ? esc(everyText(p.everyMinutes)) : 'when the price is right';
+  const edit = editing === p.id
+    ? `<form class="edit" data-id="${id}"><div class="amt"><input name="amount" inputmode="decimal" value="${esc(p.amount)}" aria-label="New amount per buy"><span>${esc(f)}</span></div><button type="submit" class="go">Save</button><button type="button" data-act="cancel">Cancel</button></form>`
+    : '';
+  return `<div class="plan${off ? ' is-paused' : ''}">
+    <div class="ptop"><span class="tag ${p.type === 'limit' ? 'limit' : ''}">${p.type === 'limit' ? 'Limit' : 'Recurring'}</span>${off && !done ? '<span class="tag off">Paused</span>' : ''}
+      <b>${esc(fmt(p.amount))} ${esc(f)} → ${esc(t)}</b><span class="mut">${what}</span></div>
+    <div class="pstat">${stat}</div>${meter}${edit}
+    <div class="pact">${done || err ? '' : `<button type="button" class="go" data-act="run" data-id="${id}">Run now</button><button type="button" data-act="edit" data-id="${id}">Edit size</button><button type="button" data-act="pause" data-id="${id}">${p.paused ? 'Resume' : 'Pause'}</button>`}<button type="button" class="danger" data-act="del" data-id="${id}">Delete</button></div>
+  </div>`;
+}
+function renderPlans() {
+  $('plans').innerHTML = plans.length ? plans.map(planHTML).join('') : '<div class="empty">No plans yet. Create one on the left.</div>';
+  $('pauseAll').textContent = pausedAll ? 'Resume all' : 'Pause all';
+  $('pauseAll').classList.toggle('on', pausedAll);
+  $('pausedNote').hidden = !pausedAll;
+}
+
+/* ---------- History ---------- */
+const stLabel = s => { s = String(s || '').toUpperCase(); return s === 'COMPLETED' ? ['done', 'Done'] : /FAIL|ERROR|EXPIRED|CANCEL/.test(s) ? ['fail', s.charAt(0) + s.slice(1).toLowerCase()] : ['wait', 'Waiting for your approval']; };
+const openQR = new Set();
+function qrMarkup(h) {
+  if (h.qr && /^data:image\//.test(h.qr)) return `<img src="${esc(h.qr)}" alt="QR code to open this buy in Tangem">`;
+  if (window.qrcode && h.deeplink) { try { const q = qrcode(0, 'M'); q.addData(String(h.deeplink)); q.make(); return q.createSvgTag(4, 0); } catch (e) {} }
+  return '<p style="color:#000;font-size:13px;margin:0">QR unavailable</p>';
+}
+function renderHistory() {
+  if (!history.length) { $('history').innerHTML = '<div class="empty">Prepared buys will appear here.</div>'; return; }
+  $('history').innerHTML = history.map(h => {
+    const [cls, label] = stLabel(h.status), d = new Date(h.time), k = esc(h.intentId || h.id);
+    const when = isNaN(d) ? '' : d.toLocaleString('en-GB', {day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'});
+    const open = openQR.has(h.intentId || h.id);
+    return `<div class="hrow">
+      <div><b>${esc(when)}</b><small>${esc(h.providerName || h.provider || '')}</small></div>
+      <div><b>${esc(fmt(h.amount))} ${esc(sym(h.from))} → ${esc(fmt(h.toAmount))} ${esc(sym(h.to))}</b><small class="hide-sm">quoted amount</small></div>
+      <span class="st ${cls}">${esc(label)}</span>
+      ${h.deeplink ? `<button type="button" data-qr="${k}">${open ? 'Hide' : 'QR'}</button>` : '<span></span>'}
+      ${open ? `<div class="qrbox"><div class="qr">${qrMarkup(h)}</div><div><b>Scan with your phone</b> to open this buy in Tangem, or check the notification Tangem already sent.<br><code>${esc(h.deeplink)}</code></div></div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+/* ---------- Data refresh ---------- */
+async function refresh() {
+  try {
+    const [p, h] = await Promise.all([api('GET', '/api/plans'), api('GET', '/api/history')]);
+    plans = p.plans || []; pausedAll = !!p.pausedAll; history = h.items || [];
+    if (!editing) renderPlans(); renderHistory();
+  } catch (e) { /* keep last view */ }
+}
+async function pollIntents() {
+  if (DEMO) return;
+  const pending = history.filter(h => h.intentId && stLabel(h.status)[0] === 'wait' && Date.now() - Date.parse(h.time) < 864e5).slice(0, 5);
+  for (const h of pending) {
+    try { const r = await api('GET', '/api/intent/' + encodeURIComponent(h.intentId)); const s = r.status || r.intent?.status; if (s) h.status = s; } catch (e) {}
+  }
+  renderHistory();
+}
+
+/* ---------- Events ---------- */
+$('tab-recurring').onclick = () => setTab('recurring');
+$('tab-limit').onclick = () => setTab('limit');
+['from', 'to'].forEach(id => $(id).addEventListener('change', () => { syncSyms(); queueQuote(); }));
+$('amount').addEventListener('input', queueQuote);
+$('chips').addEventListener('click', e => {
+  const v = e.target.dataset.v; if (!v) return;
+  if (v === 'max') { const t = tokMap()[$('from').value]; $('amount').value = t && t.balance != null ? String(Number(t.balance)) : ''; }
+  else $('amount').value = v;
+  queueQuote();
+});
+$('useCurrent').onclick = () => { if (lastBest) $('minRecv').value = String(Number(lastBest.toAmount)); else toast('No quote yet. Enter an amount first', true); };
+$('planForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const from = $('from').value, to = $('to').value, amount = $('amount').value.trim();
+  if (from === to) return toast('Pick two different tokens', true);
+  if (!(Number(amount) > 0)) return toast('Enter an amount above 0', true);
+  const body = {type: tab, from, to, amount};
+  if (tab === 'recurring') {
+    const n = Math.floor(Number($('every').value)); if (!(n >= 1)) return toast('Enter how often to buy', true);
+    body.everyMinutes = n * Number($('unit').value);
+  } else {
+    const m = $('minRecv').value.trim(); if (!(Number(m) > 0)) return toast('Enter the minimum you want to receive', true);
+    body.minReceive = m;
+  }
+  $('create').disabled = true;
+  try { await api('POST', '/api/plans', body); toast('Plan created'); await refresh(); }
+  catch (err) { toast(err.message, true); }
+  finally { $('create').disabled = false; }
+});
+const delArm = new Set();
+$('plans').addEventListener('click', async e => {
+  const b = e.target.closest('button'); if (!b) return;
+  const act = b.dataset.act, id = b.dataset.id;
+  if (act === 'cancel') { editing = null; return renderPlans(); }
+  if (act === 'edit') { editing = id; renderPlans(); const i = document.querySelector('.edit input'); if (i) i.focus(); return; }
+  if (act === 'del' && !delArm.has(id)) { delArm.add(id); b.textContent = 'Confirm delete'; setTimeout(() => { delArm.delete(id); if (b.isConnected) b.textContent = 'Delete'; }, 3000); return; }
+  b.disabled = true;
+  try {
+    if (act === 'run') { await api('POST', `/api/plans/${encodeURIComponent(id)}/run-now`); toast('Buy prepared. Check your Tangem app to approve'); }
+    if (act === 'pause') await api('POST', `/api/plans/${encodeURIComponent(id)}/pause`);
+    if (act === 'del') { await api('DELETE', `/api/plans/${encodeURIComponent(id)}`); delArm.delete(id); toast('Plan deleted'); }
+  } catch (err) { toast(err.message, true); }
+  await refresh(); b.disabled = false;
+});
+$('plans').addEventListener('submit', async e => {
+  e.preventDefault();
+  const f = e.target, id = f.dataset.id, amount = f.amount.value.trim();
+  if (!(Number(amount) > 0)) return toast('Enter an amount above 0', true);
+  try { await api('PATCH', `/api/plans/${encodeURIComponent(id)}`, {amount}); editing = null; toast(`Size updated to ${fmt(amount)}. Applies from the next buy`); await refresh(); }
+  catch (err) { toast(err.message, true); }
+});
+$('history').addEventListener('click', e => {
+  const k = e.target.dataset && e.target.dataset.qr; if (!k) return;
+  openQR.has(k) ? openQR.delete(k) : openQR.add(k); renderHistory();
+});
+$('pauseAll').onclick = async () => {
+  $('pauseAll').disabled = true;
+  try { const r = await api('POST', '/api/pause-all', {paused: !pausedAll}); pausedAll = !!r.pausedAll; toast(pausedAll ? 'All plans paused' : 'Plans resumed'); await refresh(); }
+  catch (err) { toast(err.message, true); }
+  $('pauseAll').disabled = false;
+};
+setInterval(() => document.querySelectorAll('[data-count]').forEach(el => el.textContent = countdown(el.dataset.count)), 1000);
+
+/* ---------- Start ---------- */
+(async () => {
+  let w;
+  try { w = await realFetch('GET', '/api/wallet'); if (!Array.isArray(w.tokens)) throw Object.assign(new Error('Bad wallet data'), {server:false}); }
+  catch (e) {
+    if (e.server) { setConn('err', e.message); return; }
+    DEMO = true; Demo.start(); w = await api('GET', '/api/wallet'); $('demoBar').hidden = false;
+  }
+  tokens = w.tokens;
+  setConn('ok', `${DEMO ? 'Demo' : 'Connected'} · ${tokens.length} assets`);
+  fillTokens(); queueQuote(); await refresh();
+  setInterval(refresh, DEMO ? 3000 : 5000);
+  setInterval(pollIntents, 6000);
+})();
+}
+</script>
+</body>
+</html>

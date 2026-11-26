@@ -1,0 +1,7 @@
+node_modules
+plans.json
+history.json
+prices.json
+tangem-schemas.json
+.env
+*.json.tmp
