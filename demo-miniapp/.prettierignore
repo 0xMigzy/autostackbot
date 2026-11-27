@@ -1,0 +1,5 @@
+dist
+node_modules
+public
+screenshots
+package-lock.json

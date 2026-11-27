@@ -12,7 +12,14 @@ When a buy is due, AutoStack gets Tangem's best price and prepares the buy in Ta
 
 AutoStack's alerts are information only.
 
-<img src="samples/goal-progress.png" alt="AutoStack share card" width="320">
+## Try the demo
+
+Open **https://t.me/AutoStackTangemBot/demo** in Telegram (or https://0xmigzy.github.io/autostackbot/ in a browser).
+It's a Mini App with pretend data: no wallet, no sign-in, nothing is bought. It runs entirely in your browser,
+even when the bot itself is offline. Source: [`demo-miniapp/`](demo-miniapp/).
+
+<img src="demo-miniapp/screenshots/home.png" alt="AutoStack demo: home screen" width="300">
+<img src="samples/goal-progress.png" alt="AutoStack share card" width="300">
 
 ## Setup
 

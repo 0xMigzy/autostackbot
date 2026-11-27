@@ -1,0 +1,166 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Colour tokens. Dark is the brand default; light is derived with ≥4.5:1 text contrast.
+ * shadcn/ui names (background, card, primary, …) map onto the AutoStack palette.
+ */
+:root {
+  --radius: 1rem;
+
+  --background: #f2f2f4;
+  --foreground: #0a0a0b;
+  --card: #ffffff;
+  --card-foreground: #0a0a0b;
+  --popover: #ffffff;
+  --popover-foreground: #0a0a0b;
+  --raised: #f7f7f8;
+  --chip: #e9e9ec;
+  --chip-foreground: #0a0a0b;
+  --chip-selected: #dedee3;
+  --chip-selected-border: #0a0a0b;
+  --primary: #0a0a0b;
+  --primary-foreground: #ffffff;
+  --secondary: #e9e9ec;
+  --secondary-foreground: #0a0a0b;
+  --muted: #f7f7f8;
+  --muted-foreground: #5c5c63;
+  --accent: #e9e9ec;
+  --accent-foreground: #0a0a0b;
+  --border: #dcdce1;
+  --input: #cfcfd6;
+  --ring: #0a0a0b;
+  --positive: #157a33;
+  --negative: #d70015;
+  --destructive: #d70015;
+  --destructive-foreground: #ffffff;
+  --waiting: #8f6400;
+  --flame: #b35200;
+  --overlay: rgb(10 10 11 / 0.45);
+}
+
+.dark {
+  --background: #0a0a0b;
+  --foreground: #ffffff;
+  --card: #161618;
+  --card-foreground: #ffffff;
+  --popover: #1f1f22;
+  --popover-foreground: #ffffff;
+  --raised: #1f1f22;
+  --chip: #232326;
+  --chip-foreground: #ffffff;
+  --chip-selected: #2a2a2e;
+  --chip-selected-border: #ffffff;
+  --primary: #ffffff;
+  --primary-foreground: #0a0a0b;
+  --secondary: #232326;
+  --secondary-foreground: #ffffff;
+  --muted: #1f1f22;
+  --muted-foreground: #8e8e93;
+  --accent: #2a2a2e;
+  --accent-foreground: #ffffff;
+  --border: #2a2a2e;
+  --input: #3a3a3f;
+  --ring: #ffffff;
+  --positive: #30d158;
+  --negative: #ff453a;
+  --destructive: #ff453a;
+  --destructive-foreground: #0a0a0b;
+  --waiting: #ffd60a;
+  --flame: #ff9f0a;
+  --overlay: rgb(0 0 0 / 0.6);
+}
+
+@theme inline {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --radius-sm: calc(var(--radius) - 8px);
+  --radius-md: calc(var(--radius) - 4px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 2px);
+  --radius-2xl: calc(var(--radius) + 4px);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-raised: var(--raised);
+  --color-chip: var(--chip);
+  --color-chip-foreground: var(--chip-foreground);
+  --color-chip-selected: var(--chip-selected);
+  --color-chip-selected-border: var(--chip-selected-border);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-positive: var(--positive);
+  --color-negative: var(--negative);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-waiting: var(--waiting);
+  --color-flame: var(--flame);
+  --color-overlay: var(--overlay);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    color-scheme: light;
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html.dark {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    min-width: 320px;
+    overflow-x: hidden;
+    font-feature-settings: "cv11";
+  }
+
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
+@keyframes ring-fill {
+  from {
+    stroke-dashoffset: var(--ring-from);
+  }
+  to {
+    stroke-dashoffset: var(--ring-to);
+  }
+}
+
+.ring-fill {
+  animation: ring-fill 1100ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
