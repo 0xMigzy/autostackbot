@@ -1,34 +1,28 @@
-import express from "express";
-import { spawn } from "node:child_process";
+// Plans, history, scheduler and buys. The Telegram bot calls this module directly.
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { getTangemClient, closeTangemClient } from "./tangem.js";
+import { getTangemClient } from "./tangem.js";
 
-const PORT = Number(process.env.PORT) || 3000;
-const APP_URL = `http://localhost:${PORT}`;
 const PLANS_FILE = "plans.json";
 const HISTORY_FILE = "history.json";
 const TICK_MS = 60_000;
-const DAILY_BUY_CAP = 3; // buy attempts per local calendar day, all plans together
+export const DAILY_BUY_CAP = 3; // buy attempts per local calendar day, all plans together
 const QUOTE_RETRY_DELAYS_MS = [1000, 2000]; // backoff before each retry of a retryable quote error
 const NATIVE_CONTRACT = "0"; // Express id for a network's native coin
 const NETWORKS_URI = "express+tangem-express://networks";
 const PROVIDERS_URI = "express+tangem-express://providers";
 const PLAN_TYPES = ["recurring", "limit"];
-const LOGIN_EXPIRED = "Tangem login expired. Restart Auto-Stack and scan the QR code again.";
+export const LOGIN_EXPIRED = "Tangem login expired. Restart AutoStackBot and scan the QR.";
 // mcp-remote and the SDK only surface auth failures as error text.
 const AUTH_ERROR = /\b401\b|unauthori[sz]ed|invalid_token|invalid_grant|token (?:has )?expired|login expired/i;
+// Provider errors for an amount under their minimum.
+const BELOW_MINIMUM = /\bmin(?:imum|imal)?\b|too (?:small|low)|less than/i;
 
-class HttpError extends Error {
-  constructor(status, message) {
-    super(message);
-    this.status = status;
-  }
-}
+/** A problem with the user's input or the plan's state; its message is shown as is. */
+export class UserError extends Error {}
 
 /** A tool result with isError; code and retryable come from the "[code=2540 retryable=true]" suffix. */
-class ToolError extends Error {
-  status = 502;
+export class ToolError extends Error {
   constructor(message, code, retryable) {
     super(message);
     this.code = code;
@@ -36,7 +30,7 @@ class ToolError extends Error {
   }
 }
 
-const isAuthError = (err) => AUTH_ERROR.test(String(err?.message ?? ""));
+export const isAuthError = (err) => AUTH_ERROR.test(String(err?.message ?? ""));
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function callTool(name, args = {}) {
@@ -67,6 +61,18 @@ async function callQuoteTool(name, args) {
   }
 }
 
+// ---- Notifications (set by init) ----
+
+let notifier = {};
+
+function notify(event, ...args) {
+  try {
+    Promise.resolve(notifier[event]?.(...args)).catch((err) => console.error(`Notify ${event}:`, err.message));
+  } catch (err) {
+    console.error(`Notify ${event}:`, err.message);
+  }
+}
+
 // ---- Resources (read once, cached) ----
 
 let resourcesPromise = null;
@@ -92,7 +98,7 @@ function getResources() {
 // Last wallets__get_tokens answer: the only trusted source of addresses and decimals.
 let walletTokens = null;
 
-async function loadWallet() {
+export async function loadWallet() {
   const [{ tokens }, { networks }] = await Promise.all([callTool("wallets__get_tokens"), getResources()]);
   const byKey = new Map();
   for (const t of tokens) {
@@ -106,6 +112,7 @@ async function loadWallet() {
       symbol: t.symbol,
       name: t.name,
       networkId,
+      networkName: network?.name ?? networkId,
       decimals: t.decimals,
       contractAddress,
       address: t.addresses?.[0] ?? null,
@@ -118,7 +125,7 @@ async function loadWallet() {
 }
 
 /** Human-readable balances by token key; tokens on networks the balance service rejects are left out. */
-async function loadBalances(tokens) {
+export async function loadBalances(tokens) {
   const groups = new Map();
   for (const t of tokens) {
     if (!t.address) continue;
@@ -157,13 +164,27 @@ async function loadBalances(tokens) {
   return balances;
 }
 
+/** Wallet tokens with this symbol (any case); `usable` are the ones Express can swap. Reloads once if none match. */
+export async function findTokens(symbol) {
+  const want = symbol.toLowerCase();
+  const matching = (tokens) => tokens.filter((t) => t.symbol.toLowerCase() === want);
+  let all = matching(walletTokens ?? (await loadWallet()));
+  if (!all.length) all = matching(await loadWallet());
+  return { all, usable: all.filter((t) => t.expressSupported && t.address) };
+}
+
+/** The cached wallet token for a key, for display; null if unknown. */
+export function cachedToken(key) {
+  return walletTokens?.find((t) => t.key === key) ?? null;
+}
+
 async function resolveToken(key, label) {
-  if (typeof key !== "string") throw new HttpError(400, `${label}: token key required (see /api/wallet)`);
+  if (typeof key !== "string") throw new UserError(`${label}: token required`);
   let token = walletTokens?.find((t) => t.key === key);
   token ??= (await loadWallet()).find((t) => t.key === key);
-  if (!token) throw new HttpError(400, `${label}: token ${key} is not in the wallet`);
-  if (!token.expressSupported) throw new HttpError(400, `${label}: ${token.networkId} is not supported by Express`);
-  if (!token.address) throw new HttpError(400, `${label}: the Tangem app has not shared an address for ${token.symbol}`);
+  if (!token) throw new UserError(`${label}: token ${key} is not in your Tangem wallet`);
+  if (!token.expressSupported) throw new UserError(`${label}: ${token.networkId} is not supported by Tangem Express`);
+  if (!token.address) throw new UserError(`${label}: the Tangem app has not shared an address for ${token.symbol}`);
   return token;
 }
 
@@ -171,13 +192,13 @@ const expressAsset = (token) => ({ network: token.networkId, contractAddress: to
 
 // ---- Amounts (string math only) ----
 
-function toMinor(amount, decimals, label = "amount") {
+function toMinor(amount, decimals, label = "Amount") {
   const match = /^(\d*)(?:\.(\d*))?$/.exec(String(amount ?? "").trim());
-  if (!match || (!match[1] && !match[2])) throw new HttpError(400, `${label} must be a decimal number such as 0.5`);
+  if (!match || (!match[1] && !match[2])) throw new UserError(`${label} must be a decimal number such as 0.5`);
   const [, whole, frac = ""] = match;
-  if (frac.length > decimals) throw new HttpError(400, `${label} has more than ${decimals} decimal places`);
+  if (frac.length > decimals) throw new UserError(`${label} has more than ${decimals} decimal places`);
   const minor = (whole + frac.padEnd(decimals, "0")).replace(/^0+/, "");
-  if (!minor) throw new HttpError(400, `${label} must be greater than zero`);
+  if (!minor) throw new UserError(`${label} must be greater than zero`);
   return minor;
 }
 
@@ -236,18 +257,30 @@ async function bestQuote(from, to, amount) {
   return { amountMinor, best, quotes };
 }
 
-function publicQuote({ best, quotes }) {
-  return {
-    best: best && { provider: best.provider, providerName: best.providerName, toAmount: best.toAmount, rateType: best.rateType },
-    quotes: quotes.map(({ provider, providerName, toAmount, error }) =>
-      error ? { provider, providerName, error } : { provider, providerName, toAmount },
-    ),
-  };
+export function noQuoteMessage({ quotes }, amount, symbol) {
+  if (!quotes.length) return "No Tangem Express provider supports this pair";
+  const details = quotes.map((q) => `${q.providerName}: ${q.error}`).join("; ");
+  if (quotes.every((q) => BELOW_MINIMUM.test(q.error))) {
+    return `${amount} ${symbol} is below the providers' minimum. Try a bigger amount. (${details})`;
+  }
+  return `No provider could quote: ${details}`;
 }
 
-function noQuoteMessage({ quotes }) {
-  if (!quotes.length) return "No provider supports this pair";
-  return `No provider could quote: ${quotes.map((q) => `${q.providerName}: ${q.error}`).join("; ")}`;
+/** Best quote for an amount of `fromKey` into `toKey`, plus how many providers were asked and quoted. */
+export async function quote(fromKey, toKey, amount) {
+  if (fromKey === toKey) throw new UserError("Pick two different tokens");
+  const from = await resolveToken(fromKey, "From");
+  const to = await resolveToken(toKey, "To");
+  const { best, quotes } = await bestQuote(from, to, amount);
+  return {
+    from,
+    to,
+    amount: String(amount).trim(),
+    best: best && { providerName: best.providerName, toAmount: best.toAmount, rateType: best.rateType },
+    providersAsked: new Set(quotes.map((q) => q.provider)).size,
+    providersQuoted: new Set(quotes.filter((q) => !q.error).map((q) => q.provider)).size,
+    error: best ? null : noQuoteMessage({ quotes }, amount, from.symbol),
+  };
 }
 
 // ---- State (plans.json, history.json) ----
@@ -261,31 +294,51 @@ function writeJson(file, data) {
   renameSync(`${file}.tmp`, file);
 }
 
-const savedPlans = readJson(PLANS_FILE, {});
-const state = { pausedAll: Boolean(savedPlans.pausedAll), plans: savedPlans.plans ?? [] };
-const history = readJson(HISTORY_FILE, { items: [] }).items ?? []; // newest first
+const state = { pausedAll: false, plans: [] };
+const history = []; // newest first
 
 function save() {
   writeJson(PLANS_FILE, state);
   writeJson(HISTORY_FILE, { items: history });
 }
 
-// A PENDING entry means the server stopped during intent creation: the intent may exist.
-for (const entry of history) {
-  if (entry.status !== "PENDING") continue;
-  entry.status = "ERROR";
-  const plan = state.plans.find((p) => p.id === entry.planId);
-  if (plan?.status === "active") {
-    plan.status = "error";
-    plan.error = "Auto-Stack stopped while preparing a buy; it may exist. Check the Tangem app.";
+/** Stops a plan with an error and tells the owner. */
+function failPlan(plan, message) {
+  plan.status = "error";
+  plan.error = message;
+  save();
+  notify("planError", plan);
+}
+
+/**
+ * Loads plans and history and sets the notifier: { buyPrepared(entry, plan), planError(plan), loginExpired() }.
+ * Call once, before anything else in this module.
+ */
+export function init(events) {
+  notifier = events;
+  const savedPlans = readJson(PLANS_FILE, {});
+  state.pausedAll = Boolean(savedPlans.pausedAll);
+  state.plans = savedPlans.plans ?? [];
+  history.push(...(readJson(HISTORY_FILE, { items: [] }).items ?? []));
+
+  // A PENDING entry means the bot stopped during intent creation: the intent may exist.
+  const stopped = [];
+  for (const entry of history) {
+    if (entry.status !== "PENDING") continue;
+    entry.status = "ERROR";
+    const plan = state.plans.find((p) => p.id === entry.planId);
+    if (plan?.status === "active") stopped.push(plan);
+  }
+  save();
+  for (const plan of stopped) {
+    failPlan(plan, "AutoStackBot stopped while preparing a buy; it may exist. Check the Tangem app.");
   }
 }
-save();
 
-const localDay = (ms) => new Date(ms).toLocaleDateString("en-CA"); // YYYY-MM-DD, server's time zone
+const localDay = (ms) => new Date(ms).toLocaleDateString("en-CA"); // YYYY-MM-DD, this computer's time zone
 
 /** Every history entry is one intent creation attempt, successful or not. */
-function buysToday() {
+export function buysToday() {
   const today = localDay(Date.now());
   return history.filter((entry) => localDay(Date.parse(entry.time)) === today).length;
 }
@@ -319,8 +372,8 @@ function withPlanLock(fn) {
 
 /** Quotes the plan's current amount and records the best quote on the plan. */
 async function quotePlan(plan) {
-  const from = await resolveToken(plan.from, "from");
-  const to = await resolveToken(plan.to, "to");
+  const from = await resolveToken(plan.from, "From");
+  const to = await resolveToken(plan.to, "To");
   const amount = plan.amount;
   const quote = await bestQuote(from, to, amount);
   plan.lastQuote = quote.best && {
@@ -337,12 +390,12 @@ async function quotePlan(plan) {
  * so a pause, delete or cap reached meanwhile still stops the buy.
  */
 async function prepareBuy(plan, { from, to, amount, quote }, { manual }) {
-  if (!state.plans.includes(plan)) throw new HttpError(404, "plan not found");
-  if (plan.status !== "active") throw new HttpError(409, `plan is ${plan.status}`);
-  if (state.pausedAll) throw new HttpError(409, "All plans are paused. Resume all first.");
-  if (!manual && plan.paused) throw new HttpError(409, "plan is paused");
+  if (!state.plans.includes(plan)) throw new UserError("Plan not found");
+  if (plan.status !== "active") throw new UserError(`Plan is ${plan.status}`);
+  if (state.pausedAll) throw new UserError("All plans are paused. /resumeall first.");
+  if (plan.paused) throw new UserError("Plan is paused. Resume it first.");
   if (buysToday() >= DAILY_BUY_CAP) {
-    throw new HttpError(429, `Daily limit of ${DAILY_BUY_CAP} prepared buys reached. Try again tomorrow.`);
+    throw new UserError(`Daily limit of ${DAILY_BUY_CAP} prepared buys reached. Try again tomorrow.`);
   }
 
   const { best, amountMinor } = quote;
@@ -353,6 +406,8 @@ async function prepareBuy(plan, { from, to, amount, quote }, { manual }) {
     planId: plan.id,
     from: plan.from,
     to: plan.to,
+    fromSymbol: from.symbol,
+    toSymbol: to.symbol,
     amount,
     toAmount: best.toAmount,
     providerName: best.providerName,
@@ -363,6 +418,7 @@ async function prepareBuy(plan, { from, to, amount, quote }, { manual }) {
   history.unshift(entry);
   save();
 
+  let failure = null;
   try {
     const { intentId, deeplink } = await callTool("express__exchange_intent_create", {
       fromAsset: { ...expressAsset(from), decimals: from.decimals },
@@ -379,19 +435,20 @@ async function prepareBuy(plan, { from, to, amount, quote }, { manual }) {
     if (plan.type === "recurring") plan.nextRunAt = nextSlot(plan, manual);
     else plan.status = "done";
     console.log(`Plan ${plan.id}: buy prepared, intent ${intentId}`);
+    save();
+    notify("buyPrepared", entry, plan);
     return entry;
   } catch (err) {
     // Only a non-retryable tool error is a definite failure; otherwise the intent may have been stored.
     const definite = err instanceof ToolError && !err.retryable;
     entry.status = definite ? "FAILED" : "ERROR";
-    plan.status = "error";
-    plan.error = definite
+    failure = definite
       ? `Preparing the buy failed: ${err.message}`
       : `Preparing the buy may have worked; check the Tangem app before anything else: ${err.message}`;
-    console.error(`Plan ${plan.id} stopped. ${plan.error}`);
+    console.error(`Plan ${plan.id} stopped. ${failure}`);
     throw err;
   } finally {
-    save();
+    if (failure) failPlan(plan, failure);
   }
 }
 
@@ -418,10 +475,11 @@ async function tickPlan(plan) {
     save();
     return;
   }
-  const { quote, to } = quoted;
+  const { quote, from, to } = quoted;
   if (!quote.best) {
-    plan.error = noQuoteMessage(quote);
-    if (plan.type === "recurring") plan.status = "error";
+    const message = noQuoteMessage(quote, plan.amount, from.symbol);
+    if (plan.type === "recurring") return failPlan(plan, message);
+    plan.error = message;
     save();
     return;
   }
@@ -440,6 +498,7 @@ async function tickPlan(plan) {
 // ---- Scheduler ----
 
 let ticking = false;
+let timer = null;
 
 async function tick() {
   if (ticking || state.pausedAll) return;
@@ -450,7 +509,10 @@ async function tick() {
         await withPlanLock(() => tickPlan(plan));
       } catch (err) {
         console.error(`Plan ${plan.id}:`, err.message);
-        if (isAuthError(err)) break;
+        if (isAuthError(err)) {
+          notify("loginExpired");
+          break;
+        }
       }
     }
   } finally {
@@ -458,62 +520,34 @@ async function tick() {
   }
 }
 
-// ---- Status of a prepared buy ----
-
-/** Express transaction status → history status (the front end treats COMPLETED and FAIL/ERROR/EXPIRED/CANCEL specially). */
-function historyStatus(expressStatus) {
-  if (expressStatus === "finished") return "COMPLETED";
-  if (["failed", "tx-failed", "refunded"].includes(expressStatus)) return "FAILED";
-  return String(expressStatus).toUpperCase().replace(/-/g, "_");
+export function startScheduler() {
+  timer ??= setInterval(tick, TICK_MS);
 }
 
-// ---- App ----
+export function stopScheduler() {
+  clearInterval(timer);
+  timer = null;
+}
 
-const app = express();
-app.use(express.json());
-app.use(express.static("public"));
+// ---- Plans ----
 
 function findPlan(id) {
   const plan = state.plans.find((p) => p.id === id);
-  if (!plan) throw new HttpError(404, "plan not found");
+  if (!plan) throw new UserError("Plan not found (deleted?)");
   return plan;
 }
 
-app.get("/api/wallet", async (req, res) => {
-  const tokens = await loadWallet();
-  const balances = await loadBalances(tokens);
-  res.json({
-    tokens: tokens.map(({ key, symbol, name, networkId, decimals, contractAddress, address }) => ({
-      key,
-      symbol,
-      name,
-      networkId,
-      decimals,
-      contractAddress,
-      address,
-      balance: balances.get(key) ?? null,
-    })),
-  });
-});
+export const getPlan = (id) => state.plans.find((p) => p.id === id) ?? null;
+export const listPlans = () => state.plans;
+export const isPausedAll = () => state.pausedAll;
+export const listHistory = (limit) => history.slice(0, limit);
 
-app.post("/api/quote", async (req, res) => {
-  const { from, to, amount } = req.body ?? {};
-  if (from === to) throw new HttpError(400, "from and to must differ");
-  const fromToken = await resolveToken(from, "from");
-  const toToken = await resolveToken(to, "to");
-  res.json(publicQuote(await bestQuote(fromToken, toToken, amount)));
-});
-
-app.get("/api/plans", (req, res) => {
-  res.json({ plans: state.plans, pausedAll: state.pausedAll });
-});
-
-app.post("/api/plans", async (req, res) => {
-  const { type, from, to, amount, everyMinutes, minReceive } = req.body ?? {};
-  if (!PLAN_TYPES.includes(type)) throw new HttpError(400, `type must be one of ${PLAN_TYPES.join(", ")}`);
-  if (from === to) throw new HttpError(400, "from and to must differ");
-  const fromToken = await resolveToken(from, "from");
-  const toToken = await resolveToken(to, "to");
+/** { type: "recurring", from, to, amount, everyMinutes } or { type: "limit", from, to, amount, minReceive }; from/to are token keys. */
+export async function createPlan({ type, from, to, amount, everyMinutes, minReceive }) {
+  if (!PLAN_TYPES.includes(type)) throw new UserError(`type must be one of ${PLAN_TYPES.join(", ")}`);
+  if (from === to) throw new UserError("Pick two different tokens");
+  const fromToken = await resolveToken(from, "From");
+  const toToken = await resolveToken(to, "To");
   toMinor(amount, fromToken.decimals);
 
   const plan = {
@@ -521,6 +555,10 @@ app.post("/api/plans", async (req, res) => {
     type,
     from,
     to,
+    fromSymbol: fromToken.symbol,
+    toSymbol: toToken.symbol,
+    fromNetwork: fromToken.networkName,
+    toNetwork: toToken.networkName,
     amount: String(amount).trim(),
     everyMinutes: null,
     nextRunAt: null,
@@ -533,123 +571,90 @@ app.post("/api/plans", async (req, res) => {
   };
   if (type === "recurring") {
     if (!Number.isInteger(everyMinutes) || everyMinutes < 1) {
-      throw new HttpError(400, "everyMinutes must be a whole number of minutes, at least 1");
+      throw new UserError("The interval must be at least 1 minute");
     }
     plan.everyMinutes = everyMinutes;
     plan.nextRunAt = new Date(Date.now() + everyMinutes * 60_000).toISOString();
   } else {
-    toMinor(minReceive, toToken.decimals, "minReceive");
+    toMinor(minReceive, toToken.decimals, "Minimum to receive");
     plan.minReceive = String(minReceive).trim();
   }
   state.plans.unshift(plan);
   save();
-  res.status(201).json(plan);
-});
+  return plan;
+}
 
 // Under the plan lock, so an edit never lands in the middle of a buy: it applies from the next buy.
-app.patch("/api/plans/:id", async (req, res) => {
-  const plan = await withPlanLock(async () => {
-    const plan = findPlan(req.params.id);
-    if (plan.status === "done") throw new HttpError(409, "plan is done");
-    const { amount } = req.body ?? {};
-    toMinor(amount, (await resolveToken(plan.from, "from")).decimals);
+export function editPlanAmount(id, amount) {
+  return withPlanLock(async () => {
+    const plan = findPlan(id);
+    if (plan.status === "done") throw new UserError("Plan is done");
+    toMinor(amount, (await resolveToken(plan.from, "From")).decimals);
     plan.amount = String(amount).trim();
     save();
     return plan;
   });
-  res.json(plan);
-});
+}
 
-app.post("/api/plans/:id/pause", (req, res) => {
-  const plan = findPlan(req.params.id);
+export function togglePause(id) {
+  const plan = findPlan(id);
   plan.paused = !plan.paused;
   if (!plan.paused) skipMissedSlot(plan);
   save();
-  res.json(plan);
-});
+  return plan;
+}
 
-app.post("/api/plans/:id/run-now", async (req, res) => {
-  const entry = await withPlanLock(async () => {
-    const plan = findPlan(req.params.id);
-    if (plan.status !== "active") throw new HttpError(409, `plan is ${plan.status}`);
-    if (state.pausedAll) throw new HttpError(409, "All plans are paused. Resume all first.");
+export function runNow(id) {
+  return withPlanLock(async () => {
+    const plan = findPlan(id);
+    if (plan.status !== "active") throw new UserError(`Plan is ${plan.status}`);
+    if (state.pausedAll) throw new UserError("All plans are paused. /resumeall first.");
+    if (plan.paused) throw new UserError("Plan is paused. Resume it first.");
     if (buysToday() >= DAILY_BUY_CAP) {
-      throw new HttpError(429, `Daily limit of ${DAILY_BUY_CAP} prepared buys reached. Try again tomorrow.`);
+      throw new UserError(`Daily limit of ${DAILY_BUY_CAP} prepared buys reached. Try again tomorrow.`);
     }
     const quoted = await quotePlan(plan);
     if (!quoted.quote.best) {
       save();
-      throw new HttpError(502, noQuoteMessage(quoted.quote));
+      throw new UserError(noQuoteMessage(quoted.quote, plan.amount, quoted.from.symbol));
     }
     return prepareBuy(plan, quoted, { manual: true });
   });
-  res.json(entry);
-});
+}
 
-app.delete("/api/plans/:id", (req, res) => {
-  findPlan(req.params.id);
-  state.plans = state.plans.filter((p) => p.id !== req.params.id);
+export function deletePlan(id) {
+  const plan = findPlan(id);
+  state.plans = state.plans.filter((p) => p.id !== id);
   save();
-  res.json({ ok: true });
-});
+  return plan;
+}
 
-app.post("/api/pause-all", (req, res) => {
-  const { paused } = req.body ?? {};
-  if (typeof paused !== "boolean") throw new HttpError(400, "paused must be true or false");
+export function setPausedAll(paused) {
   state.pausedAll = paused;
   if (!paused) state.plans.forEach(skipMissedSlot);
   save();
-  res.json({ pausedAll: state.pausedAll });
-});
+}
 
-app.get("/api/history", (req, res) => {
-  res.json({ items: history });
-});
+// ---- Status of a prepared buy ----
+
+/** Express transaction status → history status. */
+function historyStatus(expressStatus) {
+  if (expressStatus === "finished") return "COMPLETED";
+  if (["failed", "tx-failed", "refunded"].includes(expressStatus)) return "FAILED";
+  return String(expressStatus).toUpperCase().replace(/-/g, "_");
+}
+
+/** COMPLETED, or a status after which the buy cannot complete. */
+export const isFinalStatus = (status) => status === "COMPLETED" || /FAIL|ERROR|EXPIRED|CANCEL|REFUND/.test(status);
 
 // No status on the intent itself: the newest exchange sent from it decides. None sent yet: still CREATED.
-app.get("/api/intent/:id", async (req, res) => {
-  const { transactions } = await callTool("express__exchange_intent", { intentId: req.params.id });
+export async function intentStatus(intentId) {
+  const { transactions } = await callTool("express__exchange_intent", { intentId });
   const status = transactions?.length ? historyStatus(transactions[0].status) : "CREATED";
-  const entries = history.filter((e) => e.intentId === req.params.id && e.status !== status);
+  const entries = history.filter((e) => e.intentId === intentId && e.status !== status);
   if (entries.length) {
     for (const entry of entries) entry.status = status;
     save();
   }
-  res.json({ status });
-});
-
-app.use("/api", (req, res) => {
-  res.status(404).json({ error: `No route ${req.method} ${req.originalUrl}` });
-});
-
-app.use((err, req, res, next) => {
-  if (isAuthError(err)) return res.status(401).json({ error: LOGIN_EXPIRED });
-  const status = err.status ?? err.statusCode ?? 500;
-  if (status >= 500 && !(err instanceof ToolError)) console.error(err);
-  res.status(status).json({ error: err.message });
-});
-
-function openBrowser(url) {
-  if (process.env.BROWSER === "none") return;
-  const [command, args] =
-    process.platform === "win32" ? ["cmd", ["/c", "start", "", url]]
-    : process.platform === "darwin" ? ["open", [url]]
-    : ["xdg-open", [url]];
-  spawn(command, args, { stdio: "ignore", detached: true }).on("error", () => {}).unref();
+  return status;
 }
-
-app.listen(PORT, () => {
-  console.log(`Auto-Stack on ${APP_URL}`);
-  console.log("Connecting to Tangem: scan the QR code with your Tangem app if asked.");
-  // Connect now so the Tangem login (QR scan) happens at startup; open the app once it is done.
-  getTangemClient().then(
-    () => console.log("Tangem MCP connected"),
-    (err) => console.error("Tangem MCP connect failed (will retry on next request):", err.message),
-  ).finally(() => openBrowser(APP_URL));
-});
-setInterval(tick, TICK_MS);
-
-process.on("SIGINT", async () => {
-  await closeTangemClient();
-  process.exit(0);
-});

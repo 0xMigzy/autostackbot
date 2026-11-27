@@ -52,7 +52,7 @@ async function connect() {
     ],
     stderr: "inherit",
   });
-  const client = new Client({ name: "auto-stack", version: "1.0.0" });
+  const client = new Client({ name: "autostackbot", version: "1.0.0" });
   await client.connect(transport, { timeout: CONNECT_TIMEOUT_MS });
   return client;
 }

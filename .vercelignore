@@ -1,4 +1,0 @@
-# The demo is the static front end only: never upload the server, wallet state or secrets.
-/*
-!/public
-!/vercel.json

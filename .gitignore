@@ -4,7 +4,6 @@ history.json
 prices.json
 tangem-schemas.json
 .env
+.env.*
+!.env.example
 *.json.tmp
-
-.vercel
-.env*
