@@ -1,5 +1,13 @@
 # AutoStack
 
+Auto-buy crypto every week from your Tangem wallet. Tap your card, stack your coins.
+
+<p align="center"><a href="https://youtube.com/shorts/AcDrbXn_oiw"><img src="docs/media/demo.gif" width="300" alt="AutoStack demo: a 10 USDC to HYPE buy approved with a Tangem card tap"></a></p>
+
+<p align="center">▶️ <a href="https://youtube.com/shorts/AcDrbXn_oiw">Watch the full demo with voice-over on YouTube</a></p>
+
+<p align="center">Real buy shown: 10 USDC → 0.148 HYPE, approved in the Tangem app with a card tap.</p>
+
 AutoStack is a Telegram bot that buys crypto for you on a schedule from your Tangem wallet, for example
 10 USDC of HYPE every day at 09:00. It's dollar-cost averaging (DCA): a fixed amount on a schedule,
 so over time you pay about the average price.
@@ -13,6 +21,22 @@ card to approve. (Telegram buttons only take web links, so the button opens a ti
 > every buy in Tangem. Not affiliated with Tangem.**
 
 AutoStack's alerts are information only.
+
+## How it works
+
+<table>
+  <tr>
+    <td align="center" valign="top"><img src="docs/media/01-start.png" width="200" alt="AutoStack welcome message in Telegram with the main menu"><br><b>Open AutoStack</b></td>
+    <td align="center" valign="top"><img src="docs/media/02-markets.png" width="200" alt="Markets: coin prices with a button for each coin"><br><b>Pick a coin</b></td>
+    <td align="center" valign="top"><img src="docs/media/03-plan.png" width="200" alt="Plan summary: 10 USDC to HYPE every day, first buy now"><br><b>Set your plan</b></td>
+    <td align="center" valign="top"><img src="docs/media/04-approve.png" width="200" alt="Your buy is ready message with the Approve in Tangem button"><br><b>Buy is ready</b></td>
+  </tr>
+  <tr>
+    <td align="center" valign="top"><img src="docs/media/05-tangem-swap.png" width="200" alt="Tangem app swap screen: 10 USDC to about 0.148 HYPE"><br><b>Tangem finds the best price</b></td>
+    <td align="center" valign="top"><img src="docs/media/06-swapped.png" width="200" alt="Tangem app: swap done, 10 USDC to 0.1482 HYPE"><br><b>Tap your card, swap done</b></td>
+    <td align="center" valign="top"><img src="docs/media/07-done.png" width="200" alt="AutoStack done message with a 1-day streak share card"><br><b>Streak started</b></td>
+  </tr>
+</table>
 
 ## Try the demo
 
@@ -137,3 +161,7 @@ None of these are committed to git.
   into `demo-miniapp/public/brand/` from the brand originals
 - `demo-miniapp/`: the demo Mini App (React + Vite), see its own README. `demo-miniapp/public/open/` is the
   "Approve in Tangem" redirect page; its link rules (`link.js`) are shared with the bot.
+
+---
+
+Independent project, not affiliated with or endorsed by Tangem.
