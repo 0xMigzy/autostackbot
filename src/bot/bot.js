@@ -190,7 +190,10 @@ export function createBot({ token, ownerId, coingecko: cg }) {
     };
   }
 
-  /** Keys of coins Tangem can swap from my USDC (cached 10 min). */
+  /**
+   * Keys of coins Tangem can swap from my USDC. Cached 10 min only when every coin is buyable, so a coin
+   * left out by a momentary Tangem answer is checked again next time instead of staying hidden.
+   */
   async function buyableKeys() {
     if (marketsCache && Date.now() - marketsCache.at < MARKETS_TTL_MS) return marketsCache.keys;
     const wallet = await W.loadWallet();
@@ -199,16 +202,19 @@ export function createBot({ token, ownerId, coingecko: cg }) {
     const pairs = usdc.length && coins.length ? await W.swappablePairs(usdc, coins) : new Set();
     const keys = new Set();
     for (const coin of coins) {
-      if (!(await W.addressOn(coin.network))) continue; // no address in the wallet to receive it
-      if (usdc.some((u) => pairs.has(`${u.key}>${coin.key}`))) keys.add(coin.key);
+      const address = await W.addressOn(coin.network);
+      const swappable = usdc.some((u) => pairs.has(`${u.key}>${coin.key}`));
+      if (address && swappable) keys.add(coin.key);
+      else console.log(`Markets: ${coin.symbol} not buyable now (${address ? "Tangem can't swap to it from your USDC" : `no ${coin.network} address in the wallet`})`);
     }
-    marketsCache = { at: Date.now(), keys };
+    marketsCache = keys.size === coins.length ? { at: Date.now(), keys } : null;
     return keys;
   }
 
   async function marketsScreen() {
     const keys = await buyableKeys();
     const coins = C.usableCoins().filter((c) => keys.has(c.key));
+    const unavailable = C.usableCoins().filter((c) => !C.isUsdc(c) && !keys.has(c.key));
     const priced = await getPrices(coins.map((c) => c.coingeckoId));
     const lines = coins.map((c) => {
       const p = priced.prices[c.coingeckoId];
@@ -226,6 +232,7 @@ export function createBot({ token, ownerId, coingecko: cg }) {
         "Tap a coin to set up a plan.",
         "",
         ...(lines.length ? lines : ["No coins can be bought with your USDC right now."]),
+        ...(unavailable.length ? ["", `<i>Not available right now: ${F.esc(unavailable.map((c) => c.symbol).join(", "))}</i>`] : []),
         "",
         pricesFooter(priced, " · buys use Tangem's best price"),
       ].join("\n"),
