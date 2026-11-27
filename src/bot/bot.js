@@ -99,8 +99,16 @@ export function createBot({ token, ownerId, coingecko: cg }) {
     }
   }
 
+  /** Every screen except the start menu ends with a button back to it (unless it already has one). */
+  function withMenu(keyboard = new InlineKeyboard()) {
+    const rows = keyboard.inline_keyboard.filter((row) => row.length);
+    if (rows.flat().some((b) => b.callback_data === "nav:start")) return keyboard;
+    return InlineKeyboard.from([...rows, [InlineKeyboard.text("‹ Start menu", "nav:start")]]);
+  }
+
   /** Shows a screen: edits the message a button was pressed on, otherwise sends a new one. */
-  async function show(ctx, { text, keyboard }) {
+  async function show(ctx, { text, keyboard: base, home = false }) {
+    const keyboard = home ? base : withMenu(base);
     if (ctx.callbackQuery?.message) {
       try {
         await ctx.editMessageText(text, { ...html, reply_markup: keyboard });
@@ -156,8 +164,8 @@ export function createBot({ token, ownerId, coingecko: cg }) {
       .text("My plans", "nav:plans").text("History", "h:all:0").row()
       .text("Settings", "nav:settings").text("What's DCA?", "nav:dca");
 
-  const welcomeScreen = () => ({ text: WELCOME, keyboard: mainMenu() });
-  const dcaScreen = () => ({ text: DCA_TEXT, keyboard: new InlineKeyboard().text("‹ Back", "nav:start") });
+  const welcomeScreen = () => ({ text: WELCOME, keyboard: mainMenu(), home: true });
+  const dcaScreen = () => ({ text: DCA_TEXT, keyboard: new InlineKeyboard() });
 
   async function balanceScreen() {
     const tokens = await W.loadWallet();
@@ -559,7 +567,7 @@ export function createBot({ token, ownerId, coingecko: cg }) {
   }
 
   async function renderForm(f) {
-    return edit(f.msgId, formText(f), formKeyboard(f));
+    return edit(f.msgId, formText(f), withMenu(formKeyboard(f)));
   }
 
   /** Opens the setup form for a coin on the message `msg` (edited in place). */
@@ -613,7 +621,7 @@ export function createBot({ token, ownerId, coingecko: cg }) {
     form = null;
     const notice = f.mode === "amount" ? "New amount saved. It applies from the next buy." : "Goal saved. It applies from the next buy.";
     const screen = planScreen(plan, notice);
-    await edit(f.msgId, screen.text, screen.keyboard);
+    await edit(f.msgId, screen.text, withMenu(screen.keyboard));
   }
 
   const monthsAhead = (n) => DateTime.now().setZone(tz()).plus({ months: n }).toISODate();
@@ -694,7 +702,7 @@ export function createBot({ token, ownerId, coingecko: cg }) {
     if (ctx.match === "share") return show(ctx, plansScreen());
     return show(ctx, welcomeScreen());
   });
-  bot.command("help", (ctx) => ctx.reply(HELP));
+  bot.command("help", (ctx) => ctx.reply(HELP, { reply_markup: withMenu() }));
   bot.command("balance", async (ctx) => {
     await ctx.replyWithChatAction("typing");
     return show(ctx, await balanceScreen());
@@ -729,9 +737,9 @@ export function createBot({ token, ownerId, coingecko: cg }) {
     if (!screen) return;
     if (name === "balance" || name === "markets") await ctx.replyWithChatAction("typing");
     input = null;
-    const { text, keyboard } = await screen();
-    if (fresh) await ctx.reply(text, { ...html, reply_markup: keyboard });
-    else await show(ctx, { text, keyboard });
+    const { text, keyboard, home } = await screen();
+    if (fresh) await ctx.reply(text, { ...html, reply_markup: home ? keyboard : withMenu(keyboard) });
+    else await show(ctx, { text, keyboard, home });
   });
 
   bot.callbackQuery(/^pause:(on|off)$/, async (ctx) => {
@@ -806,7 +814,7 @@ export function createBot({ token, ownerId, coingecko: cg }) {
     const text = results.length
       ? [`<b>Matches for “${F.esc(query)}”</b>`, "Only coins Tangem can buy with your USDC are shown.", "", ...results.map((c) => `${F.esc(c.name)} (${F.esc(c.symbol)}) · ${F.esc(c.networkName)} · <code>${F.esc(F.shortContract(c.contractAddress))}</code>`)].join("\n")
       : `No coin Tangem can buy with your USDC matched “${F.esc(query)}”.`;
-    await edit(search.msgId, text, kb);
+    await edit(search.msgId, text, withMenu(kb));
   }
 
   bot.callbackQuery(/^sr:(\d+)$/, async (ctx) => {
@@ -915,7 +923,7 @@ export function createBot({ token, ownerId, coingecko: cg }) {
         else if (value === "freq") Object.assign(f, { freq: null, every: null, weekday: null, timeOk: false });
         else if (value === "time") Object.assign(f, { weekday: null, timeOk: false });
         else if (value === "stop") Object.assign(f, { stop: null, sub: null });
-        else if (value === "pay") return edit(f.msgId, `${summaryText(f)}\n\n${STEP_PROMPTS.pay}`, formKeyboardPay(f));
+        else if (value === "pay") return edit(f.msgId, `${summaryText(f)}\n\n${STEP_PROMPTS.pay}`, withMenu(formKeyboardPay(f)));
         break;
       case "start": {
         const coin = { ...f.coin };
@@ -1215,12 +1223,12 @@ export function createBot({ token, ownerId, coingecko: cg }) {
       const [start, end] = text.split(/\s*[-–]\s*/).map(parseTime);
       await cleanup();
       if (!start || !end) {
-        return edit(current.msgId, "That didn't look right. Type your quiet hours as HH:MM-HH:MM, for example 23:00-08:00.", new InlineKeyboard().text("Cancel", "nav:settings"));
+        return edit(current.msgId, "That didn't look right. Type your quiet hours as HH:MM-HH:MM, for example 23:00-08:00.", withMenu(new InlineKeyboard().text("Cancel", "nav:settings")));
       }
       input = null;
       E.updateSettings({ quiet: { start, end } });
       const s = settingsScreen();
-      return edit(current.msgId, s.text, s.keyboard);
+      return edit(current.msgId, s.text, withMenu(s.keyboard));
     }
     if (current.kind === "form" && form) {
       await cleanup();
