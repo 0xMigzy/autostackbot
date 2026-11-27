@@ -54,7 +54,7 @@ try {
   await app.bot.init();
   await app.bot.api.setMyCommands(COMMANDS);
 } catch (err) {
-  console.error("Telegram login failed (check TELEGRAM_BOT_TOKEN):", err.message);
+  console.error(`Couldn't connect to Telegram (${err.message}). If the bot token is wrong, run npm run setup to fix it.`);
   await closeTangemClient();
   process.exit(1);
 }
