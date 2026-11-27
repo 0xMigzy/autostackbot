@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DateTime } from "luxon";
-import { forecast, parseDate, parseTime, periodAt, stopReason, upcomingDues } from "../src/schedule.js";
+import { forecast, parseDate, parseTime, periodAt, planPreview, stopReason, upcomingDues } from "../src/schedule.js";
 
 const tz = "Europe/London";
 const at = (iso) => DateTime.fromISO(iso, { zone: tz }).toMillis();
@@ -86,10 +86,42 @@ test("stop conditions", () => {
   assert.equal(stopReason({ type: "goal", unit: "usd", target: "250" }, { buys: 25, received: 3, spent: 250 }, NOW, tz), "goal");
 });
 
-test("input parsing: time and DD/MM/YYYY dates", () => {
-  assert.equal(parseTime("9:05"), "09:05");
-  assert.equal(parseTime("18:30"), "18:30");
-  assert.equal(parseTime("24:00"), null);
+test("input parsing: typed times and DD/MM/YYYY dates", () => {
+  for (const [typed, time] of [
+    ["07:45", "07:45"], ["7:45", "07:45"], ["7.45", "07:45"], ["745", "07:45"], ["19:00", "19:00"],
+    ["7pm", "19:00"], ["7 PM", "19:00"], ["7:30pm", "19:30"], ["12am", "00:00"], ["12pm", "12:00"], ["9:05", "09:05"],
+  ]) {
+    assert.equal(parseTime(typed), time, typed);
+  }
+  for (const bad of ["24:00", "7", "13pm", "0am", "7:60", "noon", ""]) assert.equal(parseTime(bad), null, bad);
   assert.equal(parseDate("31/03/2027"), "2027-03-31");
   assert.equal(parseDate("31/02/2027"), null);
+});
+
+const daily18 = { freq: "daily", time: "18:00" };
+const goal1 = { type: "goal", unit: "coin", target: "1" };
+
+test("preview with Buy now: first buy now, the schedule continues from the next period", () => {
+  const nowMs = at("2026-11-27T10:00"); // before today's 18:00: today's slot is covered by the first buy
+  const p = planPreview({ schedule: daily18, stop: goal1, amount: "10", perBuyCoin: 0.25, buyNow: true, nowMs, tz });
+  assert.equal(p.firstAt, nowMs);
+  assert.equal(p.forecast.buys, 4); // now + 28, 29, 30 Nov at 18:00
+  assert.equal(iso(p.forecast.date), "2026-11-30 18:00");
+});
+
+test("preview waiting for the schedule: first buy at the next due time", () => {
+  const nowMs = at("2026-11-27T10:00");
+  const p = planPreview({ schedule: daily18, stop: goal1, amount: "10", perBuyCoin: 0.25, buyNow: false, nowMs, tz });
+  assert.equal(iso(p.firstAt), "2026-11-27 18:00");
+  assert.equal(p.forecast.buys, 4); // 27, 28, 29, 30 Nov
+  assert.equal(iso(p.forecast.date), "2026-11-30 18:00");
+});
+
+test("preview with Buy now: a goal reached by the first buy, and a buys stop counting it", () => {
+  const nowMs = at("2026-11-27T10:00");
+  const one = planPreview({ schedule: daily18, stop: goal1, amount: "100", perBuyCoin: 1.2, buyNow: true, nowMs, tz });
+  assert.deepEqual([one.forecast.buys, one.forecast.date], [1, nowMs]);
+  const buys = planPreview({ schedule: daily18, stop: { type: "buys", count: 3 }, amount: "10", perBuyCoin: 0.2, buyNow: true, nowMs, tz });
+  assert.equal(buys.forecast.buys, 3);
+  assert.equal(iso(buys.forecast.date), "2026-11-29 18:00"); // now, 28, 29
 });

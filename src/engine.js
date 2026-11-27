@@ -1,12 +1,18 @@
 // Scheduler and buy lifecycle: prepares buys, follows them, evaluates periods (missed, streaks), reminders and alerts.
 // The bot listens to the events passed to init(); every buy request goes through requestBuy().
 import { DateTime } from "luxon";
-import * as W from "./wallet.js";
+import * as Wallet from "./wallet.js";
 import { USDC_COINGECKO_ID, isUsdc } from "./coins.js";
 import { history, insertEntry, newId, save, state } from "./store.js";
 import { dueAllowed, forecast, periodAt, periodsBetween, stopReason, upcomingDues } from "./schedule.js";
-import { averagePrice, computeStreak, expiredByAge, isPausedAt, planProgress, restartPlan } from "./stats.js";
+import { averagePrice, clearHistoryEntries, computeStreak, expiredByAge, isPausedAt, planProgress, resetPlanStats, restartPlan } from "./stats.js";
 import { cheaperRoute, dipPercent, inQuietHours, nextReminderAt, routeFee, usdcNeeded } from "./alerts.js";
+
+// The Tangem layer; tests swap it for a fake with useWalletForTests (test seam).
+let W = Wallet;
+export function useWalletForTests(fake) {
+  W = { ...Wallet, ...fake };
+}
 
 export const DAILY_CAP = 3; // new buy requests per day, all plans together
 const TICK_MS = 60_000;
@@ -93,11 +99,12 @@ function closePause(ranges, now = Date.now()) {
   for (const r of ranges) if (r.to == null) r.to = now;
 }
 
-/** When the plan's next buy will be prepared (skips a period that already has a completed buy), or null. */
+/** When the plan's next scheduled buy will be prepared (skips periods already covered or completed), or null. */
 export function nextBuyAt(plan, now = Date.now()) {
   if (plan.status !== "active") return null;
   for (const due of upcomingDues(plan.schedule, now, 3, tz, plan.stop)) {
-    if (!completedIn(plan, periodAt(plan.schedule, due, tz))) return due;
+    const period = periodAt(plan.schedule, due, tz);
+    if (period.key !== plan.lastPreparedKey && !completedIn(plan, period)) return due;
   }
   return null;
 }
@@ -149,8 +156,10 @@ async function buyAssets(plan, payKey = plan.pay.key) {
 /**
  * Prepares ONE buy request (one express__exchange_intent_create call, never retried). Call under withLock.
  * kind: "scheduled" | "now" | "fresh". Checks run again after the price awaits, so a pause or the cap meanwhile stops it.
+ * coversPeriod: the buy stands for the current period, so that period's scheduled buy won't fire (scheduled buys,
+ * and the first buy of a plan started with "Buy now").
  */
-async function requestBuy(plan, { kind, replaces = null, amount = plan.amount }) {
+async function requestBuy(plan, { kind, replaces = null, amount = plan.amount, coversPeriod = kind === "scheduled" }) {
   assertCanBuy(plan, { replacing: Boolean(replaces) });
   const { from, to, payout } = await buyAssets(plan);
   const { amountMinor, best } = await W.bestPrice(from, to, amount);
@@ -179,7 +188,7 @@ async function requestBuy(plan, { kind, replaces = null, amount = plan.amount })
     replaces: replaces?.id ?? null,
   };
   insertEntry(entry);
-  if (kind === "scheduled") plan.lastPreparedKey = period.key;
+  if (coversPeriod) plan.lastPreparedKey = period.key;
   save();
 
   let problem = null;
@@ -495,8 +504,12 @@ async function checkCheaperRoute(plan, entry) {
 
 // ---- Plan changes ----
 
-/** draft: { coin, pay, amount, schedule, stop }. The first buy is the first due time after now. */
-export function createPlan(draft) {
+/**
+ * Creates a plan from draft { coin, pay, amount, schedule, stop }. With buyNow, ONE buy request is prepared right away
+ * and covers the current period (its scheduled buy won't fire again); otherwise the first buy is the next due time.
+ * Returns { plan, entry, error }: error is set when the first buy couldn't be prepared (the plan still runs).
+ */
+export function startPlan(draft, { buyNow = false } = {}) {
   return withLock(async () => {
     const now = Date.now();
     const plan = {
@@ -520,7 +533,17 @@ export function createPlan(draft) {
     };
     state.plans.push(plan);
     save();
-    return plan;
+    if (!buyNow) return { plan, entry: null, error: null };
+    try {
+      const entry = await requestBuy(plan, { kind: "now", coversPeriod: true });
+      save();
+      emit("buyReady", entry, plan, {});
+      afterPrepared(plan, entry);
+      return { plan, entry, error: null };
+    } catch (err) {
+      if (W.isAuthError(err)) throw err;
+      return { plan, entry: null, error: err };
+    }
   });
 }
 
@@ -596,6 +619,23 @@ export const startOver = () =>
     save();
   });
 
+/**
+ * Clears past buys for one coin (coinKey) or all coins (null). Buys still in progress are kept. Plans keep running,
+ * but the affected plans' streak, best streak, average and goal progress start again from now.
+ * Returns { deleted, kept }.
+ */
+export const clearHistory = (coinKey = null) =>
+  withLock(async () => {
+    const { remaining, deleted, kept } = clearHistoryEntries(history, coinKey);
+    history.splice(0, history.length, ...remaining);
+    const now = Date.now();
+    for (const plan of state.plans) {
+      if (coinKey == null || plan.coin.key === coinKey) Object.assign(plan, resetPlanStats(plan, now));
+    }
+    save();
+    return { deleted, kept };
+  });
+
 export function updateSettings(patch) {
   Object.assign(state.settings, patch);
   save();
@@ -608,6 +648,9 @@ export function start() {
   setTimeout(tick, 5_000);
   setTimeout(pollRequests, 15_000);
 }
+
+/** Test seam: one scheduler pass on demand. */
+export const tickForTests = () => tick();
 
 export function stop() {
   timers.splice(0).forEach(clearInterval);

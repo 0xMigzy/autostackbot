@@ -5,8 +5,8 @@ import * as E from "../engine.js";
 import * as W from "../wallet.js";
 import * as C from "../coins.js";
 import { history, save, state } from "../store.js";
-import { WEEKDAYS, WEEKDAY_NAMES, forecast, parseDate, parseTime } from "../schedule.js";
-import { coinSummary } from "../stats.js";
+import { WEEKDAYS, WEEKDAY_NAMES, parseDate, parseTime, planPreview } from "../schedule.js";
+import { clearHistoryEntries, coinSummary } from "../stats.js";
 import { renderCard } from "../share.js";
 import { ensureLogo } from "../logos.js";
 import { redact } from "../redact.js";
@@ -43,9 +43,9 @@ const HELP = [
   "",
   "/portfolio: your wallet in dollars",
   "/markets: coins you can buy, with prices",
-  "/dca: set up a new DCA plan",
+  "/dca: set up a new DCA plan (buy now or wait for the schedule)",
   "/plans: see, pause or change your plans",
-  "/history: your buys, with a summary per coin",
+  "/history: your buys, a summary per coin, export or clear",
   "/pause: pause or resume everything",
   "/settings: reminders, alerts and share cards",
   "",
@@ -183,15 +183,7 @@ export function createBot({ token, ownerId, coingecko: cg }) {
       return { text: "Your wallet is empty. Top up in Tangem, then come back.", keyboard: new InlineKeyboard().text("Markets", "nav:markets") };
     }
     const priced = await getPrices([...new Set(held.map(priceIdOf))]);
-    const rows = held.map((t) => {
-      const balance = balances.get(t.key);
-      const price = priced.prices[priceIdOf(t)]?.usd;
-      const value = price != null ? Number(balance) * price : null;
-      const worth = value != null ? `   (${F.usd(value)})` : "";
-      return { line: `${F.esc(t.symbol)} · ${F.esc(t.networkName)}   ${F.amount(balance)}${worth}`, value };
-    });
-    rows.sort((a, b) => (b.value ?? -1) - (a.value ?? -1));
-    const total = rows.reduce((sum, r) => sum + (r.value ?? 0), 0);
+    const { rows, total } = F.portfolioRows(held, balances, (t) => priced.prices[priceIdOf(t)]?.usd ?? null);
     return {
       text: [`💼 <b>Your portfolio: ${F.usd(total)}</b>`, "", ...rows.map((r) => r.line)].join("\n"),
       keyboard: new InlineKeyboard().text("Markets", "nav:markets").text("My plans", "nav:plans"),
@@ -377,7 +369,7 @@ export function createBot({ token, ownerId, coingecko: cg }) {
     if (page > 0) keyboard.text("‹ Newer", `h:${filter}:${page - 1}`);
     if ((page + 1) * HISTORY_PAGE < entries.length) keyboard.text("Older ›", `h:${filter}:${page + 1}`);
     if (keyboard.inline_keyboard.at(-1)?.length) keyboard.row();
-    keyboard.text("Export CSV", `hx:${filter}`);
+    keyboard.text("🗑 Clear history", "hc:menu").text("📄 Export CSV", `hx:${filter}`);
     return { text: lines.join("\n"), keyboard };
   }
 
@@ -392,7 +384,7 @@ export function createBot({ token, ownerId, coingecko: cg }) {
       .text(`Quiet hours ${s.quiet.start}–${s.quiet.end} · Change`, "st:quiet").row()
       .text(`Low USDC alert: On${check(s.lowUsdc)}`, "st:low:1").text(`Off${check(!s.lowUsdc)}`, "st:low:0").row()
       .text(`Amounts on cards: Hide${check(!s.showAmounts)}`, "st:amt:0").text(`Show${check(s.showAmounts)}`, "st:amt:1").row()
-      .text("Start over", "st:over");
+      .text("Clear history", "hc:menu").text("Start over", "st:over");
     const text = [
       "<b>Settings</b>",
       "",
@@ -417,44 +409,39 @@ export function createBot({ token, ownerId, coingecko: cg }) {
     if (!f.amount) return "amount";
     if (!f.freq) return "freq";
     if (f.freq === "days" && !f.every) return "every";
-    if (f.freq !== "daily" && !f.weekday) return "day";
-    if (!f.timeOk) return "time";
+    if ((f.freq === "weekly" || f.freq === "monthly") && !f.weekday) return "day";
+    if (!f.firstBuy) return "first";
+    if (!f.time) return "time";
     if (!f.stop) return "stop";
     return f.changing ? "change" : "summary";
   };
 
-  /** For "every X days": the first date with the chosen weekday whose buy time is still ahead. */
-  function anchorFor(weekday, time) {
-    const now = DateTime.now().setZone(tz());
-    const [hour, minute] = time.split(":").map(Number);
-    for (let i = 0; i < 8; i++) {
-      const day = now.plus({ days: i }).set({ hour, minute, second: 0, millisecond: 0 });
-      if (day.weekday === weekday && day > now) return day.toISODate();
-    }
-    return now.toISODate();
-  }
+  /** The current time in the owner's time zone, "HH:MM". */
+  const nowTime = () => DateTime.now().setZone(tz()).toFormat("HH:mm");
 
+  // "Every X days" windows start today; the first buy is now or the next window time.
   const draftSchedule = (f) => ({
     freq: f.freq,
-    weekday: f.freq === "daily" ? null : f.weekday,
+    weekday: f.freq === "weekly" || f.freq === "monthly" ? f.weekday : null,
     every: f.freq === "days" ? f.every : null,
-    anchor: f.freq === "days" ? anchorFor(f.weekday, f.time) : null,
+    anchor: f.freq === "days" ? DateTime.now().setZone(tz()).toISODate() : null,
     time: f.time,
   });
 
   function scheduleSoFar(f) {
     if (!f.freq) return null;
-    if (f.freq === "daily") return `Every day at ${f.time}`;
-    if (f.freq === "days") return f.every ? `Every ${f.every} days${f.weekday ? `, starting ${WEEKDAYS[f.weekday - 1]}` : ""} at ${f.time}` : "Every few days";
+    const at = f.time ? ` at ${f.time}` : "";
+    if (f.freq === "daily") return `Every day${at}`;
+    if (f.freq === "days") return f.every ? `Every ${f.every} days${at}` : "Every few days";
     if (!f.weekday) return f.freq === "weekly" ? "Weekly" : "Monthly";
     const day = WEEKDAY_NAMES[f.weekday - 1];
-    return f.freq === "weekly" ? `Every ${day} at ${f.time}` : `First ${day} of every month at ${f.time}`;
+    return f.freq === "weekly" ? `Every ${day}${at}` : `First ${day} of every month${at}`;
   }
 
   const CUSTOM_PROMPTS = {
     amount: "Type the amount in USDC, for example 15.",
     every: "Type the number of days between buys, for example 3.",
-    time: "Type the time as HH:MM, for example 18:30.",
+    time: "Type a time, for example 07:45, 7.45, 19:00 or 7pm.",
     buys: "Type the number of buys, for example 8.",
     date: "Type the last date as DD/MM/YYYY.",
     gcoin: "Type how much of the coin you want, for example 1.5.",
@@ -481,8 +468,13 @@ export function createBot({ token, ownerId, coingecko: cg }) {
           if (i === 3) kb.row();
         });
         return cancel();
+      case "first":
+        kb.text("⚡ Buy now", "w:fb:now").text("Wait for the schedule", "w:fb:wait");
+        return cancel();
       case "time":
-        kb.text(`Keep ${f.time}`, "w:t:ok").text("Change", "w:in:time");
+        kb.text(`Now (${nowTime()})`, "w:t:now").row();
+        ["08:00", "12:00", "18:00"].forEach((t) => kb.text(t, `w:t:${t}`));
+        kb.text("Custom", "w:in:time");
         return cancel();
       case "stop":
         switch (f.sub) {
@@ -508,7 +500,10 @@ export function createBot({ token, ownerId, coingecko: cg }) {
       case "summary":
         return kb.text("Start", "w:start").text("Change", "w:chg");
       case "change":
-        kb.text("Amount", "w:c:amount").text("How often", "w:c:freq").row().text("Day & time", "w:c:time").text("Stop when", "w:c:stop").row();
+        kb.text("Amount", "w:c:amount").text("How often", "w:c:freq").row();
+        kb.text("First buy", "w:c:first").text("Time", "w:c:time").row();
+        if (f.freq === "weekly" || f.freq === "monthly") kb.text("Day", "w:c:day");
+        kb.text("Stop when", "w:c:stop").row();
         if (f.payOptions.length > 1) kb.text("Pay with", "w:c:pay").row();
         return kb.text("‹ Back", "w:c:back");
       default:
@@ -519,8 +514,9 @@ export function createBot({ token, ownerId, coingecko: cg }) {
   const STEP_PROMPTS = {
     amount: "How much per buy?",
     freq: "How often?",
-    day: (f) => (f.freq === "monthly" ? "Which day? (the first one of each month)" : f.freq === "days" ? "Which day is the first buy?" : "Which day?"),
-    time: (f) => `What time? Buys happen at ${f.time} unless you change it.`,
+    day: (f) => (f.freq === "monthly" ? "Which day? (the first one of each month)" : "Which day?"),
+    first: "When should your first buy happen?",
+    time: "What time should the next buys happen?",
     stop: (f) =>
       ({ buys: "Stop after how many buys?", date: "Stop on which date?", goal: "What kind of goal?", gcoin: `How much ${f.coin.symbol}?`, gusd: "How many dollars in total?" })[f.sub] ??
       "Stop when?",
@@ -537,14 +533,18 @@ export function createBot({ token, ownerId, coingecko: cg }) {
   function summaryText(f) {
     const schedule = draftSchedule(f);
     const sym = F.esc(f.coin.symbol);
-    let when = F.describeSchedule(schedule);
-    if (f.freq === "days") when += `, starting ${F.weekdayLong(DateTime.fromISO(schedule.anchor, { zone: tz() }).toMillis(), tz())}`;
-    const lines = ["✅ Here's your plan", `${F.amount(f.amount)} USDC ${when}`];
     const per = perBuyCoin(f);
-    if (per) lines.push(`About ${F.amount(per)} ${sym} each time`);
-    const fc = forecast({
-      schedule, stop: f.stop, amount: f.amount, progress: { buys: 0, received: 0, spent: 0 }, perBuyCoin: per, nowMs: Date.now(), tz: tz(),
+    const buyNow = f.firstBuy === "now";
+    const { firstAt, forecast: fc } = planPreview({
+      schedule, stop: f.stop, amount: f.amount, perBuyCoin: per, buyNow, nowMs: Date.now(), tz: tz(),
     });
+    const first = buyNow ? "now" : firstAt ? F.whenLong(firstAt, tz()) : "none before the stop date";
+    const lines = [
+      "✅ Here's your plan",
+      `First buy: ${first}`,
+      `Then: ${F.amount(f.amount)} USDC → ${sym} ${F.describeSchedule(schedule)}`,
+    ];
+    if (per) lines.push(`About ${F.amount(per)} ${sym} each time`);
     if (fc?.kind === "goal" && fc.date) {
       const target = F.esc(F.goalLabel(f.stop, f.coin.symbol));
       lines.push(f.stop.unit === "usd"
@@ -571,6 +571,7 @@ export function createBot({ token, ownerId, coingecko: cg }) {
       if (f.amount) lines.push(`Amount: ${F.amount(f.amount)} USDC`);
       const sched = scheduleSoFar(f);
       if (sched) lines.push(`How often: ${sched}`);
+      if (f.firstBuy) lines.push(`First buy: ${f.firstBuy === "now" ? "now" : "at the scheduled time"}`);
       if (f.stop) lines.push(`Stop: ${F.esc(F.stopText(f.stop, f.coin.symbol))}`);
       if (f.pay) lines.push(`Pay with: USDC on ${F.esc(f.pay.token.networkName)}`);
     } else if (f.mode === "amount") {
@@ -607,7 +608,7 @@ export function createBot({ token, ownerId, coingecko: cg }) {
       usdcPrice: priced.prices[C.USDC_COINGECKO_ID]?.usd ?? null,
       payOptions,
       pay: payOptions[0],
-      amount: null, freq: null, every: null, weekday: null, time: "09:00", timeOk: false, stop: null,
+      amount: null, freq: null, every: null, weekday: null, firstBuy: null, time: null, stop: null,
       sub: null, input: null, error: null, changing: false, estimate: null,
     };
     input = null;
@@ -662,9 +663,8 @@ export function createBot({ token, ownerId, coingecko: cg }) {
       }
       case "time": {
         const time = parseTime(text);
-        if (!time) return "Use a time like 09:00 or 18:30.";
+        if (!time) return "That isn't a time I understand. Try 07:45, 7.45, 19:00 or 7pm.";
         f.time = time;
-        f.timeOk = true;
         return null;
       }
       case "buys": {
@@ -910,7 +910,7 @@ export function createBot({ token, ownerId, coingecko: cg }) {
       case "f":
         f.freq = value;
         f.every = null;
-        if (value === "daily") f.weekday = null;
+        if (value === "daily" || value === "days") f.weekday = null;
         if (value === "days") {
           f.input = "every";
           input = { kind: "form", field: "every" };
@@ -919,8 +919,12 @@ export function createBot({ token, ownerId, coingecko: cg }) {
       case "d":
         f.weekday = Number(value);
         break;
+      case "fb":
+        f.firstBuy = value === "now" ? "now" : "wait";
+        break;
       case "t":
-        f.timeOk = true;
+        if (value === "now") f.time = nowTime();
+        else setFormValue(f, "time", value);
         break;
       case "s":
         if (value === "never") f.stop = { type: "never" };
@@ -953,27 +957,36 @@ export function createBot({ token, ownerId, coingecko: cg }) {
           f.changing = false;
           f.changeTarget = null;
         } else if (value === "amount") f.amount = null;
-        else if (value === "freq") Object.assign(f, { freq: null, every: null, weekday: null, timeOk: false });
-        else if (value === "time") Object.assign(f, { weekday: null, timeOk: false });
+        else if (value === "freq") Object.assign(f, { freq: null, every: null, weekday: null });
+        else if (value === "day") f.weekday = null;
+        else if (value === "first") f.firstBuy = null;
+        else if (value === "time") f.time = null;
         else if (value === "stop") Object.assign(f, { stop: null, sub: null });
         else if (value === "pay") return edit(f.msgId, `${summaryText(f)}\n\n${STEP_PROMPTS.pay}`, withMenu(formKeyboardPay(f)));
         break;
       case "start": {
         const coin = { ...f.coin };
         const pay = f.pay.token;
-        const plan = await E.createPlan({
-          coin,
-          pay: { symbol: pay.symbol, network: pay.network, networkName: pay.networkName, contractAddress: pay.contractAddress, key: pay.key },
-          amount: f.amount,
-          schedule: draftSchedule(f),
-          stop: f.stop,
-        });
+        const sym = F.esc(coin.symbol);
+        const { plan, entry, error } = await E.startPlan(
+          {
+            coin,
+            pay: { symbol: pay.symbol, network: pay.network, networkName: pay.networkName, contractAddress: pay.contractAddress, key: pay.key },
+            amount: f.amount,
+            schedule: draftSchedule(f),
+            stop: f.stop,
+          },
+          { buyNow: f.firstBuy === "now" },
+        );
         form = null;
         const next = E.nextBuyAt(plan);
-        return show(ctx, {
-          text: `Your ${F.esc(coin.symbol)} plan is on.${next ? ` First buy: ${F.whenLong(next, tz())}.` : ""}\nYou'll get a message here when it's ready to approve.`,
-          keyboard: new InlineKeyboard().text("My plans", "nav:plans"),
-        });
+        const nextLine = next ? `Next buy: ${F.whenLong(next, tz())}.` : "";
+        const text = entry
+          ? `Your ${sym} plan is on. Your first buy is ready: open Tangem and tap your card to approve it.\n${nextLine}`
+          : error
+            ? `Your ${sym} plan is on, but the first buy couldn't be prepared: ${F.esc(errorText(error))}\n${nextLine}`
+            : `Your ${sym} plan is on.${next ? ` First buy: ${F.whenLong(next, tz())}.` : ""}\nYou'll get a message here when it's ready to approve.`;
+        return show(ctx, { text, keyboard: new InlineKeyboard().text("My plans", "nav:plans") });
       }
     }
     if (f.stop && f.sub) f.sub = null;
@@ -1136,23 +1149,85 @@ export function createBot({ token, ownerId, coingecko: cg }) {
     await show(ctx, historyScreen(ctx.match[1], Number(ctx.match[2])));
   });
 
+  function historyCsv(entries) {
+    const rows = entries.map((e) =>
+      [
+        DateTime.fromMillis(e.createdAt, { zone: tz() }).toFormat("yyyy-MM-dd HH:mm"),
+        `${e.paid} ${e.pay.symbol}`,
+        e.received ?? (e.estimate ? `about ${e.estimate}` : ""),
+        e.coin.symbol,
+        e.coin.network,
+        e.status,
+      ].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(","),
+    );
+    return new InputFile(Buffer.from(["date,paid,received,coin,network,status", ...rows].join("\n") + "\n"), "autostack-history.csv");
+  }
+
   bot.callbackQuery(/^hx:(\w+)$/, async (ctx) => {
     await ctx.answerCallbackQuery();
-    const { entries } = historyFilter(ctx.match[1]);
-    const csv = [
-      "date,paid,received,coin,network,status",
-      ...entries.map((e) =>
-        [
-          DateTime.fromMillis(e.createdAt, { zone: tz() }).toFormat("yyyy-MM-dd HH:mm"),
-          `${e.paid} ${e.pay.symbol}`,
-          e.received ?? (e.estimate ? `about ${e.estimate}` : ""),
-          e.coin.symbol,
-          e.coin.network,
-          e.status,
-        ].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(","),
-      ),
-    ].join("\n");
-    await ctx.replyWithDocument(new InputFile(Buffer.from(csv + "\n"), "autostack-history.csv"));
+    await ctx.replyWithDocument(historyCsv(historyFilter(ctx.match[1]).entries));
+  });
+
+  // ---- Clear history: all coins or one coin; buys still in progress are kept ----
+
+  function clearMenuScreen() {
+    const coins = [...new Map(history.map((e) => [e.coin.key, e.coin])).values()];
+    const keyboard = new InlineKeyboard();
+    if (coins.length) {
+      keyboard.text("Clear all", "hc:all").row();
+      coins.forEach((c, i) => {
+        keyboard.text(c.symbol, `hc:c:${C.shortId(c.key)}`);
+        if (i % 3 === 2) keyboard.row();
+      });
+      keyboard.row().text("📄 Export CSV first", "hc:csv").row();
+    }
+    keyboard.text("Cancel", "h:all:0");
+    return {
+      text: coins.length ? "<b>Clear history</b>\nClear every coin, or pick one." : "Your history is already empty.",
+      keyboard,
+    };
+  }
+
+  function clearConfirmScreen(scope) {
+    const coin = scope === "all" ? null : history.find((e) => C.shortId(e.coin.key) === scope)?.coin;
+    if (scope !== "all" && !coin) return clearMenuScreen();
+    const { deleted, kept } = clearHistoryEntries(history, coin?.key ?? null);
+    const what = coin ? F.esc(coin.symbol) : "all coins";
+    const keptLine = kept ? `\n${F.plural(kept, "waiting buy")} will be kept.` : "";
+    if (!deleted) {
+      return { text: `There are no past buys to clear for ${what}.${keptLine}`, keyboard: new InlineKeyboard().text("‹ Back", "hc:menu") };
+    }
+    return {
+      text:
+        `This deletes ${F.plural(deleted, "past buy")} for ${what}. Your average price, totals and streaks will reset too. ` +
+        `Your crypto in Tangem is NOT affected.${keptLine}`,
+      keyboard: new InlineKeyboard().text("Yes, clear", `hc:yes:${scope}`).text("Cancel", "hc:menu"),
+    };
+  }
+
+  bot.callbackQuery(/^hc:(menu|all|csv|c|yes)(?::(\w+))?$/, async (ctx) => {
+    const [, action, arg] = ctx.match;
+    await ctx.answerCallbackQuery();
+    switch (action) {
+      case "menu":
+        return show(ctx, clearMenuScreen());
+      case "csv":
+        return ctx.replyWithDocument(historyCsv(history));
+      case "all":
+        return show(ctx, clearConfirmScreen("all"));
+      case "c":
+        return show(ctx, clearConfirmScreen(arg));
+      case "yes": {
+        const coin = arg === "all" ? null : history.find((e) => C.shortId(e.coin.key) === arg)?.coin;
+        if (arg !== "all" && !coin) return show(ctx, clearMenuScreen());
+        const { kept } = await E.clearHistory(coin?.key ?? null);
+        const keptLine = kept ? `\n${F.plural(kept, "waiting buy")} ${kept === 1 ? "was" : "were"} kept.` : "";
+        return show(ctx, {
+          text: `History cleared ✅ Your plans keep running as normal.${keptLine}`,
+          keyboard: new InlineKeyboard().text("History", "h:all:0").text("My plans", "nav:plans"),
+        });
+      }
+    }
   });
 
   // ---- Settings ----

@@ -12,12 +12,20 @@ function atTime(day, time) {
   return day.set({ hour, minute, second: 0, millisecond: 0 });
 }
 
-/** "HH:MM" 24h → normalised "HH:MM", or null. */
+/**
+ * A typed time → "HH:MM" (24h), or null. Accepts 07:45, 7:45, 7.45, 745, 19:00, 7pm, 7:30pm, 12am.
+ * A bare hour without am/pm ("7") is ambiguous and rejected.
+ */
 export function parseTime(text) {
-  const match = /^\s*(\d{1,2})[:.h]?(\d{2})\s*$/.exec(text ?? "");
-  if (!match) return null;
-  const hour = Number(match[1]);
-  const minute = Number(match[2]);
+  const match = /^\s*(\d{1,2})(?:[:.h]?(\d{2}))?\s*(am|pm)?\s*$/i.exec(text ?? "");
+  if (!match || (match[2] == null && !match[3])) return null;
+  let hour = Number(match[1]);
+  const minute = Number(match[2] ?? 0);
+  const half = match[3]?.toLowerCase();
+  if (half) {
+    if (hour < 1 || hour > 12) return null;
+    hour = (hour % 12) + (half === "pm" ? 12 : 0);
+  }
   if (hour > 23 || minute > 59) return null;
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
@@ -153,4 +161,24 @@ export function forecast({ schedule, stop, amount, progress, perBuyCoin, nowMs, 
     default:
       return { kind: "never" };
   }
+}
+
+/**
+ * What a new plan will do: { firstAt, forecast }. firstAt is now with buyNow, else the first due time (or null).
+ * With buyNow the first buy covers the current period, so the schedule continues from the next period, and
+ * forecast.buys counts that first buy too. forecast is null when a coin goal can't be forecast (no price).
+ */
+export function planPreview({ schedule, stop, amount, perBuyCoin, buyNow, nowMs, tz }) {
+  if (!buyNow) {
+    const none = { buys: 0, received: 0, spent: 0 };
+    return {
+      firstAt: upcomingDues(schedule, nowMs, 1, tz, stop)[0] ?? null,
+      forecast: forecast({ schedule, stop, amount, progress: none, perBuyCoin, nowMs, tz }),
+    };
+  }
+  const first = { buys: 1, received: perBuyCoin ?? 0, spent: Number(amount) };
+  const afterThisPeriod = periodAt(schedule, nowMs, tz).end - 1;
+  const rest = forecast({ schedule, stop, amount, progress: first, perBuyCoin, nowMs: afterThisPeriod, tz });
+  if (!rest || rest.kind === "never") return { firstAt: nowMs, forecast: rest };
+  return { firstAt: nowMs, forecast: { ...rest, buys: rest.buys + 1, date: rest.date ?? nowMs } };
 }

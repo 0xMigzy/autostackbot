@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DateTime } from "luxon";
-import { averagePrice, coinSummary, computeStreak, planProgress, restartPlan } from "../src/stats.js";
+import { averagePrice, clearHistoryEntries, coinSummary, computeStreak, planProgress, resetPlanStats, restartPlan } from "../src/stats.js";
 
 const tz = "Europe/London";
 const at = (iso) => DateTime.fromISO(iso, { zone: tz }).toMillis();
@@ -133,4 +133,45 @@ test("a buy request not approved within 7 days counts as expired", async () => {
   assert.equal(expiredByAge({ createdAt: created, approved: false }, at("2026-11-08T09:00")), false); // exactly 7 days
   assert.equal(expiredByAge({ createdAt: created, approved: false }, at("2026-11-08T09:01")), true);
   assert.equal(expiredByAge({ createdAt: created, approved: true }, at("2026-11-20T09:00")), false); // approved: on its way
+});
+
+const HYPE = { key: "hyperevm:0", symbol: "HYPE" };
+const ETH = { key: "ethereum:0", symbol: "ETH" };
+const clearSample = () => [
+  done("2026-11-02T10:00", { coin: HYPE, received: "0.16" }),
+  done("2026-11-09T10:00", { coin: ETH, received: "0.003" }),
+  { planId: "p1", coin: HYPE, status: "MISSED", paid: "10", createdAt: at("2026-11-16T09:00") },
+  { planId: "p1", coin: HYPE, status: "WAITING", paid: "10", estimate: "0.15", createdAt: at("2026-11-23T09:00") },
+  { planId: "p1", coin: ETH, status: "PENDING", paid: "10", createdAt: at("2026-11-23T09:01") },
+];
+
+test("clear all history: past buys go, buys still waiting are kept", () => {
+  const { remaining, deleted, kept } = clearHistoryEntries(clearSample(), null);
+  assert.equal(deleted, 3);
+  assert.equal(kept, 2);
+  assert.deepEqual(remaining.map((e) => e.status), ["WAITING", "PENDING"]);
+});
+
+test("clear one coin: only that coin's past buys go", () => {
+  const { remaining, deleted, kept } = clearHistoryEntries(clearSample(), HYPE.key);
+  assert.equal(deleted, 2); // HYPE done + missed
+  assert.equal(kept, 1); // HYPE waiting
+  assert.deepEqual(remaining.map((e) => `${e.coin.symbol} ${e.status}`), ["ETH COMPLETED", "HYPE WAITING", "ETH PENDING"]);
+});
+
+test("after clearing, streak, best streak, average and goal progress start again", () => {
+  const entries = [done("2026-11-02T10:00"), done("2026-11-09T10:00"), done("2026-11-16T10:00")];
+  const before = plan(weekly, { bestStreak: 3 });
+  assert.deepEqual(streak(before, entries, "2026-11-18T12:00"), { current: 3, best: 3 });
+  const now = at("2026-11-18T12:00");
+  const { remaining } = clearHistoryEntries(entries, null);
+  const after = resetPlanStats(before, now);
+  assert.equal(remaining.length, 0);
+  assert.deepEqual(streak(after, remaining, "2026-11-18T13:00"), { current: 0, best: 0 });
+  assert.equal(planProgress(after, remaining).buys, 0);
+  assert.equal(averagePrice(remaining), null);
+  // A buy that was kept (waiting) and completes later counts towards the new progress.
+  const later = [done("2026-11-23T10:00")];
+  assert.equal(planProgress(after, later).buys, 1);
+  assert.deepEqual(streak(after, later, "2026-11-24T12:00"), { current: 1, best: 1 });
 });

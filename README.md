@@ -72,14 +72,21 @@ If the Tangem login expires, AutoStack tells you: restart AutoStack and scan the
 | `/markets` | Coins you can buy with your USDC, with prices; search for more |
 | `/dca` | Set up a new DCA plan: pick a coin, amount, schedule and goal |
 | `/plans` | Your plans: progress, streak, next buy; buy now, edit, pause, restart or delete |
-| `/history` | Your last buys, a summary per coin, and a CSV export |
+| `/history` | Your last buys, a summary per coin, CSV export, and Clear history |
 | `/pause` | Pause or resume everything |
-| `/settings` | Reminders, quiet hours, low USDC alert, amounts on share cards, start over |
+| `/settings` | Reminders, quiet hours, low USDC alert, amounts on share cards, clear history, start over |
 | `/help` | How AutoStack works |
 
-**Setting up a plan** happens in one message: amount, how often (daily, weekly, monthly, every X days),
-day and time (09:00 by default), when to stop (never, after X buys, on a date, or at a goal in coins or dollars)
-and which USDC to pay with. The summary shows about how much you get each time and when you'll reach your goal.
+**Setting up a plan** happens in one message: amount, how often (daily, weekly, monthly, every X days), the day
+(weekly/monthly), whether the first buy happens **now** or waits for the schedule, the time for the next buys
+(now, 08:00, 12:00, 18:00, or any time you type, like 7.45 or 7pm), when to stop (never, after X buys, on a date,
+or at a goal in coins or dollars) and which USDC to pay with. The summary shows the first buy, the schedule, about
+how much you get each time and when you'll reach your goal. With **Buy now**, the first buy is prepared as soon as you
+tap Start; it counts for the current day/week/month, so the schedule doesn't buy again in that same period.
+
+**Clear history** (in /history or /settings): clear every coin or one coin, optionally after exporting a CSV.
+Buys still waiting for approval are kept, your plans keep running, and the cleared coin's streak, average price and
+goal progress start again. Your crypto in Tangem is not affected.
 
 **Streaks** count the days, weeks or months in a row with a completed buy. Approving late in the period counts;
 paused periods don't break a streak.

@@ -90,3 +90,23 @@ export function restartPlan(plan, mode, nowMs) {
   }
   return restarted;
 }
+
+const inProgress = (e) => e.status === "WAITING" || e.status === "PENDING";
+
+/**
+ * Splits history for "Clear history" of one coin (coinKey) or all coins (null): buys still in progress are kept.
+ * Returns { remaining, deleted, kept } (counts for the cleared scope).
+ */
+export function clearHistoryEntries(entries, coinKey = null) {
+  const inScope = (e) => coinKey == null || e.coin?.key === coinKey;
+  return {
+    remaining: entries.filter((e) => !inScope(e) || inProgress(e)),
+    deleted: entries.filter((e) => inScope(e) && !inProgress(e)).length,
+    kept: entries.filter((e) => inScope(e) && inProgress(e)).length,
+  };
+}
+
+/** After clearing history: streak, best streak and goal progress count again from now; the plan keeps running. */
+export function resetPlanStats(plan, nowMs) {
+  return { ...plan, progressFrom: nowMs, streakFrom: nowMs, bestStreak: 0, lastStreak: 0, streakNotice: null };
+}

@@ -113,3 +113,21 @@ export function stopText(stop, symbol) {
       return "never";
   }
 }
+
+/**
+ * /portfolio lines: only tokens with a balance above zero (missing balances are left out), largest $ value first.
+ * balances: Map key → amount string; priceOf(token) → $ price or null. Returns { rows: [{ line, value }], total }.
+ */
+export function portfolioRows(tokens, balances, priceOf) {
+  const rows = tokens
+    .filter((t) => Number(balances.get(t.key) ?? 0) > 0)
+    .map((t) => {
+      const balance = balances.get(t.key);
+      const price = priceOf(t);
+      const value = price != null ? Number(balance) * price : null;
+      const worth = value != null ? `   (${usd(value)})` : "";
+      return { line: `${esc(t.symbol)} · ${esc(t.networkName)}   ${amount(balance)}${worth}`, value };
+    })
+    .sort((a, b) => (b.value ?? -1) - (a.value ?? -1));
+  return { rows, total: rows.reduce((sum, r) => sum + (r.value ?? 0), 0) };
+}
