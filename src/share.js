@@ -1,6 +1,6 @@
-// Shareable progress card renderer: draws a 1080x1080 PNG with the coin logo, a progress
-// ring, the buy streak and optional goal details. Only data passed in is drawn
-// (never addresses or balances); the coin logo is the only image ever drawn.
+// Shareable progress card renderer: draws a 1080x1080 PNG with the AutoStack icon, the coin logo,
+// a progress ring, the buy streak and optional goal details. Only data passed in is drawn
+// (never addresses or balances); the only images drawn are the AutoStack icon and the coin logo.
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { createCanvas, GlobalFonts, loadImage } from "@napi-rs/canvas";
@@ -17,7 +17,15 @@ const LOGO_FALLBACK = "#232326";
 const FONT = "Inter";
 const MARGIN = 72;
 const LOGO = 96;
-const FOOTER = "AutoStack · works with Tangem · not affiliated with Tangem";
+const BRAND_ICON_H = 40;
+const BRAND_GAP = 14; // icon → "AutoStack"
+const BRAND_ICON_PATH = fileURLToPath(new URL("../demo-miniapp/public/brand/autostack-icon-white.png", import.meta.url));
+// Vertical layout, top to bottom: brand row, gap, logo + title row, gap, panel.
+const HEADER_GAP = 44;
+const PANEL_GAP = 44;
+const PANEL_H = 660;
+const CONTENT_H = BRAND_ICON_H + HEADER_GAP + LOGO + PANEL_GAP + PANEL_H;
+const TOP = Math.round((SIZE - CONTENT_H) / 2); // centres the content block vertically
 
 // Register bundled Inter weights once, relative to this module so any cwd works.
 for (const file of ["Inter-Regular.ttf", "Inter-SemiBold.ttf", "Inter-Bold.ttf"]) {
@@ -115,6 +123,10 @@ async function loadLogo(logoPath) {
   }
 }
 
+// The bundled AutoStack icon, loaded once; null if it can't be read (the card then shows the name only).
+let brandIcon;
+const loadBrandIcon = () => (brandIcon ??= loadLogo(BRAND_ICON_PATH));
+
 /** Coin logo clipped to a circle, or a neutral circle with the symbol's first two letters. */
 function drawLogo(ctx, img, symbol, x, y) {
   const r = LOGO / 2;
@@ -150,7 +162,7 @@ function drawLogo(ctx, img, symbol, x, y) {
  * @returns {Promise<Buffer>} PNG bytes, 1080x1080
  */
 export async function renderCard(card) {
-  const logo = await loadLogo(card.logoPath);
+  const [logo, icon] = await Promise.all([loadLogo(card.logoPath), loadBrandIcon()]);
   const canvas = createCanvas(SIZE, SIZE);
   const ctx = canvas.getContext("2d");
   ctx.textBaseline = "alphabetic";
@@ -158,14 +170,22 @@ export async function renderCard(card) {
   ctx.fillStyle = BG;
   ctx.fillRect(0, 0, SIZE, SIZE);
 
-  // Brand, top-left.
+  // Brand row, top-left: icon, then "AutoStack" centred on it.
+  let brandX = MARGIN;
+  if (icon) {
+    const iconW = Math.round((icon.width * BRAND_ICON_H) / icon.height);
+    ctx.drawImage(icon, MARGIN, TOP, iconW, BRAND_ICON_H);
+    brandX += iconW + BRAND_GAP;
+  }
   ctx.font = `700 36px ${FONT}`;
   ctx.fillStyle = TEXT;
   ctx.textAlign = "left";
-  ctx.fillText("AutoStack", MARGIN, 104);
+  ctx.textBaseline = "middle";
+  ctx.fillText("AutoStack", brandX, TOP + BRAND_ICON_H / 2 + 1);
+  ctx.textBaseline = "alphabetic";
 
   // Header row: coin logo + goal title.
-  const headerY = 150;
+  const headerY = TOP + BRAND_ICON_H + HEADER_GAP;
   drawLogo(ctx, logo, card.coinSymbol, MARGIN, headerY);
   const titleX = MARGIN + LOGO + 28;
   const title = fitText(ctx, card.title, 700, 60, SIZE - MARGIN - titleX);
@@ -176,8 +196,8 @@ export async function renderCard(card) {
   ctx.textBaseline = "alphabetic";
 
   // Panel holding the ring and streak details.
-  const panelTop = 290;
-  const panelBottom = 950;
+  const panelTop = headerY + LOGO + PANEL_GAP;
+  const panelBottom = panelTop + PANEL_H;
   ctx.fillStyle = PANEL;
   roundRect(ctx, MARGIN, panelTop, SIZE - MARGIN * 2, panelBottom - panelTop, 44);
   ctx.fill();
@@ -187,7 +207,7 @@ export async function renderCard(card) {
 
   // Progress ring.
   const cx = SIZE / 2;
-  const cy = 520 + shift;
+  const cy = panelTop + 230 + shift;
   const r = 165;
   const hasGoal = typeof card.percent === "number" && Number.isFinite(card.percent);
   const pct = hasGoal ? Math.min(100, Math.max(0, card.percent)) : 100;
@@ -217,7 +237,7 @@ export async function renderCard(card) {
   }
 
   // Detail lines below the ring.
-  let y = 790 + shift;
+  let y = panelTop + 500 + shift;
   // With no goal the streak is already in the ring, so only show the best streak here.
   const streakLine = hasGoal
     ? `${plural(card.streak, card.periodWord)} in a row · best ${card.bestStreak}`
@@ -231,9 +251,6 @@ export async function renderCard(card) {
   if (card.amountsLine) {
     centeredText(ctx, card.amountsLine, y, { weight: 400, size: 32, color: SECONDARY, maxWidth: SIZE - MARGIN * 2 - 80 });
   }
-
-  // Footer: Tangem appears only here, as text.
-  centeredText(ctx, FOOTER, SIZE - 52, { weight: 400, size: 26, color: SECONDARY });
 
   return canvas.encode("png");
 }
