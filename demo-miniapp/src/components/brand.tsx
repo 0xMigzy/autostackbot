@@ -15,9 +15,16 @@ const LOGO_SIZES = {
   splash: { width: 160, height: 102 },
 } as const;
 
-/** Full stacked AutoStack lockup (816×519); white on dark theme, black on light theme. */
-export function Logo({ className }: { className?: string }) {
-  const scheme = useColorScheme();
+/** Full stacked AutoStack lockup; white on dark theme, black on light theme. */
+export function Logo({
+  variant,
+  className,
+}: {
+  variant: keyof typeof LOGO_SIZES;
+  className?: string;
+}) {
+  const tone = useColorScheme() === "dark" ? "white" : "dark";
+  const { width, height } = LOGO_SIZES[variant];
   return (
     <img
       {...sized(`logo-${tone}-${variant}`)}
