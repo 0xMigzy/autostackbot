@@ -1,10 +1,10 @@
 {
-  "name": "auto-stack",
+  "name": "autostackbot",
   "version": "1.0.0",
-  "description": "Recurring buys and limit buys from your Tangem wallet via the Tangem MCP server",
-  "main": "server.js",
+  "description": "AutoStackBot: Telegram bot for recurring (DCA) and limit buys from your Tangem wallet via Tangem Express",
+  "main": "index.js",
   "scripts": {
-    "start": "node server.js",
+    "start": "node index.js",
     "inspect": "node inspect.js"
   },
   "keywords": [],
@@ -13,7 +13,9 @@
   "type": "module",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",
-    "express": "^5.3.0",
-    "qrcode": "^1.5.4"
+    "grammy": "^1.48.0"
+  },
+  "engines": {
+    "node": ">=20.12"
   }
 }
