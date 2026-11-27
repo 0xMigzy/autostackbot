@@ -50,6 +50,8 @@ const HELP = [
   "/settings: reminders, alerts and share cards",
   "",
   DISCLAIMER,
+  "",
+  "<i>Prices from CoinGecko</i>",
 ].join("\n");
 const STRANGER_REPLY =
   "AutoStack is a private bot. Try the demo here: https://t.me/AutoStackTangemBot/demo\nor run your own: github.com/0xMigzy/autostackbot";
@@ -172,36 +174,26 @@ export function createBot({ token, ownerId, coingecko: cg }) {
   const welcomeScreen = () => ({ text: WELCOME, keyboard: mainMenu(), home: true });
   const dcaScreen = () => ({ text: DCA_TEXT, keyboard: new InlineKeyboard() });
 
+  /** Only tokens with a balance above zero, largest $ value first. Tokens Tangem can't read a balance for are left out. */
   async function portfolioScreen() {
     const tokens = await W.loadWallet();
     const balances = await W.loadBalances(tokens);
-    const priced = await getPrices([...new Set(tokens.map(priceIdOf))]);
-    let total = 0;
-    const shown = [];
-    const unreadable = [];
-    for (const t of tokens) {
-      const name = `${F.esc(t.symbol)} · ${F.esc(t.networkName)}`;
+    const held = tokens.filter((t) => Number(balances.get(t.key) ?? 0) > 0);
+    if (!held.length) {
+      return { text: "Your wallet is empty. Top up in Tangem, then come back.", keyboard: new InlineKeyboard().text("Markets", "nav:markets") };
+    }
+    const priced = await getPrices([...new Set(held.map(priceIdOf))]);
+    const rows = held.map((t) => {
       const balance = balances.get(t.key);
-      if (balance == null) {
-        unreadable.push(`${name}: — (balance not available)`);
-        continue;
-      }
-      if (Number(balance) === 0) continue; // zero balances are hidden
       const price = priced.prices[priceIdOf(t)]?.usd;
       const value = price != null ? Number(balance) * price : null;
-      if (value != null) total += value;
-      shown.push({ line: `${name}: ${F.amount(balance)}${value != null ? ` (${F.usd(value)})` : ""}`, sort: value ?? -1 });
-    }
-    shown.sort((a, b) => b.sort - a.sort);
+      const worth = value != null ? `   (${F.usd(value)})` : "";
+      return { line: `${F.esc(t.symbol)} · ${F.esc(t.networkName)}   ${F.amount(balance)}${worth}`, value };
+    });
+    rows.sort((a, b) => (b.value ?? -1) - (a.value ?? -1));
+    const total = rows.reduce((sum, r) => sum + (r.value ?? 0), 0);
     return {
-      text: [
-        `<b>Your portfolio: ${F.usd(total)}</b>`,
-        "",
-        ...(shown.length ? shown.map((r) => r.line) : ["No tokens with a balance yet."]),
-        ...(unreadable.length ? ["", "<b>Not shown by Tangem</b>", ...unreadable] : []),
-        "",
-        pricesFooter(priced),
-      ].join("\n"),
+      text: [`💼 <b>Your portfolio: ${F.usd(total)}</b>`, "", ...rows.map((r) => r.line)].join("\n"),
       keyboard: new InlineKeyboard().text("Markets", "nav:markets").text("My plans", "nav:plans"),
     };
   }
@@ -739,7 +731,7 @@ export function createBot({ token, ownerId, coingecko: cg }) {
     if (ctx.match === "share") return show(ctx, plansScreen());
     return show(ctx, welcomeScreen());
   });
-  bot.command("help", (ctx) => ctx.reply(HELP, { reply_markup: withMenu() }));
+  bot.command("help", (ctx) => ctx.reply(HELP, { ...html, reply_markup: withMenu() }));
   bot.command("portfolio", async (ctx) => {
     await ctx.replyWithChatAction("typing");
     return show(ctx, await portfolioScreen());
