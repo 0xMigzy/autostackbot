@@ -126,3 +126,11 @@ test("restart fresh: progress and streak from now, history and best kept", () =>
   assert.equal(planProgress(r, entries).buys, 1);
   assert.deepEqual(streak(r, entries, "2026-11-24T12:00"), { current: 1, best: 3 });
 });
+
+test("a buy request not approved within 7 days counts as expired", async () => {
+  const { expiredByAge } = await import("../src/stats.js");
+  const created = at("2026-11-01T09:00");
+  assert.equal(expiredByAge({ createdAt: created, approved: false }, at("2026-11-08T09:00")), false); // exactly 7 days
+  assert.equal(expiredByAge({ createdAt: created, approved: false }, at("2026-11-08T09:01")), true);
+  assert.equal(expiredByAge({ createdAt: created, approved: true }, at("2026-11-20T09:00")), false); // approved: on its way
+});

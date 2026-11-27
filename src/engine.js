@@ -5,14 +5,14 @@ import * as W from "./wallet.js";
 import { USDC_COINGECKO_ID, isUsdc } from "./coins.js";
 import { history, insertEntry, newId, save, state } from "./store.js";
 import { dueAllowed, forecast, periodAt, periodsBetween, stopReason, upcomingDues } from "./schedule.js";
-import { averagePrice, computeStreak, isPausedAt, planProgress, restartPlan } from "./stats.js";
+import { averagePrice, computeStreak, expiredByAge, isPausedAt, planProgress, restartPlan } from "./stats.js";
 import { cheaperRoute, dipPercent, inQuietHours, nextReminderAt, routeFee, usdcNeeded } from "./alerts.js";
 
 export const DAILY_CAP = 3; // new buy requests per day, all plans together
 const TICK_MS = 60_000;
 const POLL_MS = 120_000;
 const DIP_MS = 3_600_000;
-const FOLLOW_MS = 14 * 86_400_000; // stop following a request after this long
+// Unapproved requests are followed until Tangem reports them finished or they expire by age (expiredByAge).
 const MAX_MISSED_PER_PASS = 60;
 
 let tz = "Europe/London";
@@ -336,22 +336,21 @@ async function tickPlan(plan, now) {
 
 // ---- Following requests ----
 
-function applyStatus(entry, live) {
+function applyStatus(entry, live, now = Date.now()) {
   entry.approved = entry.approved || live.approved;
   if (live.status === "COMPLETED") {
     entry.status = "COMPLETED";
-    entry.completedAt = Date.now();
+    entry.completedAt = now;
     if (live.received) entry.received = live.received;
   } else if (live.status === "FAILED" || live.status === "EXPIRED") {
     entry.status = live.status;
+  } else if (expiredByAge(entry, now)) {
+    entry.status = "EXPIRED"; // never approved within 7 days: no new request is made
   }
 }
 
 async function pollRequests() {
-  const now = Date.now();
-  const followed = history.filter(
-    (e) => e.requestId && (e.status === "WAITING" || e.status === "MISSED") && now - e.createdAt < FOLLOW_MS,
-  );
+  const followed = history.filter((e) => e.requestId && (e.status === "WAITING" || e.status === "MISSED"));
   for (const entry of followed) {
     let live;
     try {
@@ -375,7 +374,7 @@ async function pollRequests() {
         }
       } else if (entry.status !== before) {
         save();
-        emit(entry.status === "EXPIRED" ? "buyExpired" : "buyFailed", entry, plan);
+        if (plan) emit(entry.status === "EXPIRED" ? "buyExpired" : "buyFailed", entry, plan);
       } else {
         save();
       }

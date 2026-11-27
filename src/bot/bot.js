@@ -51,6 +51,8 @@ const HELP = [
   "",
   DISCLAIMER,
 ].join("\n");
+const STRANGER_REPLY =
+  "AutoStack is a private bot. Try the demo here: https://t.me/AutoStackTangemBot/demo\nor run your own: github.com/0xMigzy/autostackbot";
 
 const html = { parse_mode: "HTML", link_preview_options: { is_disabled: true } };
 const isNotModified = (err) => err instanceof GrammyError && /not modified/i.test(err.description);
@@ -175,20 +177,31 @@ export function createBot({ token, ownerId, coingecko: cg }) {
     const balances = await W.loadBalances(tokens);
     const priced = await getPrices([...new Set(tokens.map(priceIdOf))]);
     let total = 0;
-    const rows = tokens.map((t) => {
+    const shown = [];
+    const unreadable = [];
+    for (const t of tokens) {
+      const name = `${F.esc(t.symbol)} · ${F.esc(t.networkName)}`;
       const balance = balances.get(t.key);
+      if (balance == null) {
+        unreadable.push(`${name}: — (balance not available)`);
+        continue;
+      }
+      if (Number(balance) === 0) continue; // zero balances are hidden
       const price = priced.prices[priceIdOf(t)]?.usd;
-      const value = balance != null && price != null ? Number(balance) * price : null;
+      const value = price != null ? Number(balance) * price : null;
       if (value != null) total += value;
-      const line =
-        balance == null
-          ? `${F.esc(t.symbol)} · ${F.esc(t.networkName)}: — (balance not available)`
-          : `${F.esc(t.symbol)} · ${F.esc(t.networkName)}: ${F.amount(balance)}${value != null ? ` (${F.usd(value)})` : ""}`;
-      return { line, sort: value ?? (balance == null ? -2 : -1) };
-    });
-    rows.sort((a, b) => b.sort - a.sort);
+      shown.push({ line: `${name}: ${F.amount(balance)}${value != null ? ` (${F.usd(value)})` : ""}`, sort: value ?? -1 });
+    }
+    shown.sort((a, b) => b.sort - a.sort);
     return {
-      text: [`<b>Your portfolio: ${F.usd(total)}</b>`, "", ...rows.map((r) => r.line), "", pricesFooter(priced)].join("\n"),
+      text: [
+        `<b>Your portfolio: ${F.usd(total)}</b>`,
+        "",
+        ...(shown.length ? shown.map((r) => r.line) : ["No tokens with a balance yet."]),
+        ...(unreadable.length ? ["", "<b>Not shown by Tangem</b>", ...unreadable] : []),
+        "",
+        pricesFooter(priced),
+      ].join("\n"),
       keyboard: new InlineKeyboard().text("Markets", "nav:markets").text("My plans", "nav:plans"),
     };
   }
@@ -697,10 +710,22 @@ export function createBot({ token, ownerId, coingecko: cg }) {
     return renderForm(f);
   }
 
-  // ---- Owner only, offline updates dropped by polling ----
+  // ---- Owner only (others get one pointer to the demo per day), offline updates dropped by polling ----
+
+  /** Someone else wrote to the bot in a private chat: one reply per person per day, otherwise silence. */
+  async function answerStranger(ctx) {
+    if (!ctx.message || ctx.chat?.type !== "private" || !ctx.from) return;
+    const today = DateTime.now().setZone(tz()).toISODate();
+    const replies = (state.strangerReplies ??= {});
+    if (replies[ctx.from.id] === today) return;
+    for (const [id, day] of Object.entries(replies)) if (day !== today) delete replies[id];
+    replies[ctx.from.id] = today;
+    save();
+    await ctx.reply(STRANGER_REPLY, { link_preview_options: { is_disabled: true } }).catch(() => {});
+  }
 
   bot.use(async (ctx, next) => {
-    if (ctx.from?.id !== ownerId) return; // everyone else is ignored silently
+    if (ctx.from?.id !== ownerId) return answerStranger(ctx);
     if (ctx.message?.text?.startsWith("/")) {
       input = null;
       if (form) form.input = null;

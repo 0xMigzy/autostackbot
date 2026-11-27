@@ -11,12 +11,13 @@ export function usd(n) {
   return n.toLocaleString("en-US", { style: "currency", currency: "USD", ...digits });
 }
 
-/** Coin amounts: up to 6 significant digits, no trailing zeros. */
+/** Coin amounts for display: 4 significant digits (0.1505, 0.07768), whole numbers from 1,000 up. Full precision stays in data. */
 export function amount(n) {
   const x = Number(n);
   if (!Number.isFinite(x)) return String(n);
   if (x === 0) return "0";
-  return x.toLocaleString("en-US", { maximumSignificantDigits: 6, useGrouping: x >= 10_000 });
+  if (Math.abs(x) >= 1000) return x.toLocaleString("en-US", { maximumFractionDigits: 0 });
+  return x.toLocaleString("en-US", { maximumSignificantDigits: 4 });
 }
 
 export function change(pct) {

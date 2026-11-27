@@ -84,9 +84,9 @@ If the price changed a lot, tap "Get a fresh price".
 price; a cheaper way to pay when you hold USDC on another network.
 
 **Share cards:** tap Share to get a 1080×1080 image of your goal and streak (no amounts unless you turn them on
-in /settings). Post it from any chat by typing `@YourBotName ` with inline mode on. Examples are in `samples/`.
+in /settings). To post it from any chat, type `@YourBotName` and a space (with inline mode on). Examples are in `samples/`.
 
-**Adding coins:** /markets → Search. AutoStack shows matches with their network and contract, and the CoinGecko page
+**Adding coins:** /markets or /dca → Search. AutoStack shows matches with their network and contract, and the CoinGecko page
 so you can check it's the right coin before tapping Add. Coins are always identified by network and contract
 address, never by symbol alone. They're saved in `coins.json`.
 
@@ -98,7 +98,8 @@ address, never by symbol alone. They're saved in `coins.json`.
 - At most 3 new buy requests per day, across all plans.
 - A plan never gets a second scheduled buy while one is still waiting for approval.
 - Everything is paid out to your own address in your Tangem wallet.
-- AutoStack answers only your Telegram account and ignores everyone else. Messages sent while it was offline are ignored.
+- AutoStack works only for your Telegram account. Anyone else who messages your bot gets one short reply a day
+  pointing to the demo, and nothing more. Messages sent while it was offline are ignored.
 - The bot token and API keys are replaced with `***` in logs and errors.
 
 ## License
@@ -116,3 +117,6 @@ None of these are committed to git.
 - `npm test`: unit tests (schedules, forecasts, streaks, reminders, alerts, CoinGecko budget, share cards)
 - `npm run samples`: regenerates the sample share cards in `samples/`
 - `npm run inspect`: saves the Tangem MCP tool schemas to `tangem-schemas.json`
+- `npm run brand`: exports the bot picture (`autostack-avatar-512.png`) and the Mini App photo (`autostack-app-640x360.png`)
+  into `demo-miniapp/public/brand/` from the brand originals
+- `demo-miniapp/`: the demo Mini App (React + Vite), see its own README

@@ -4,6 +4,10 @@ import { periodAt, periodsBetween } from "./schedule.js";
 /** Coin received by a completed buy: the actual amount when known, else the estimate. */
 export const receivedOf = (entry) => Number(entry.received ?? entry.estimate ?? 0);
 
+export const REQUEST_EXPIRY_MS = 7 * 86_400_000;
+/** A buy request not approved within 7 days counts as expired, even if Tangem hasn't said so. */
+export const expiredByAge = (entry, nowMs) => !entry.approved && nowMs - entry.createdAt > REQUEST_EXPIRY_MS;
+
 const completedFor = (plan, entries, from) =>
   entries.filter((e) => e.planId === plan.id && e.status === "COMPLETED" && e.completedAt >= from);
 
