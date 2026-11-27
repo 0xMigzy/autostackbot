@@ -11,6 +11,7 @@ import { renderCard } from "../share.js";
 import { ensureLogo } from "../logos.js";
 import { redact } from "../redact.js";
 import * as F from "./format.js";
+import { approveUrl } from "../approve.js";
 
 const LOGIN_EXPIRED = "Tangem login expired. Restart AutoStack and scan the QR.";
 const MARKETS_TTL_MS = 10 * 60_000;
@@ -58,7 +59,6 @@ const STRANGER_REPLY =
 
 const html = { parse_mode: "HTML", link_preview_options: { is_disabled: true } };
 const isNotModified = (err) => err instanceof GrammyError && /not modified/i.test(err.description);
-const isUrlRejected = (err) => err instanceof GrammyError && /url|button/i.test(err.description);
 
 function errorText(err) {
   if (W.isAuthError(err)) return LOGIN_EXPIRED;
@@ -74,7 +74,6 @@ export function createBot({ token, ownerId, coingecko: cg }) {
   let input = null; // what the next plain text message is for: { kind, ... }
   let form = null; // the plan setup / edit form bound to one message
   let search = null; // { results, msgId }
-  let linkButtonsOk = true; // Telegram may refuse tangem:// in buttons; then the link stays text-only
   let marketsCache = null; // { at, keys: Set } coins buyable from my USDC
   let loginExpiredSent = false;
   const busy = new Set(); // double-tap guard for buttons that prepare a buy
@@ -128,22 +127,15 @@ export function createBot({ token, ownerId, coingecko: cg }) {
     return ctx.reply(text, { ...html, reply_markup: keyboard });
   }
 
-  /** Message with a Tangem link as text; also as a button when Telegram accepts it. */
-  async function sendWithLink(text, link, keyboard = new InlineKeyboard()) {
-    const withButton = () =>
-      InlineKeyboard.from([[InlineKeyboard.url("Open Tangem", link)], ...keyboard.inline_keyboard.filter((row) => row.length)]);
-    if (link && linkButtonsOk) {
-      try {
-        return await bot.api.sendMessage(ownerId, text, { ...html, reply_markup: withButton() });
-      } catch (err) {
-        if (!isUrlRejected(err)) throw err;
-        linkButtonsOk = false;
-      }
-    }
-    return bot.api.sendMessage(ownerId, text, { ...html, reply_markup: keyboard });
+  /** Buttons for a waiting buy: [Approve in Tangem] (https page that opens the Tangem app), then any extra rows. */
+  function approveKeyboard(entry, extra = new InlineKeyboard()) {
+    const url = approveUrl(entry.link);
+    const rows = extra.inline_keyboard.filter((row) => row.length);
+    return InlineKeyboard.from(url ? [[InlineKeyboard.url("Approve in Tangem", url)], ...rows] : rows);
   }
 
-  const approveBlock = (entry) => `Open Tangem and tap your card to approve:\n${F.esc(entry.link)}`;
+  const approveLine = (entry) =>
+    approveUrl(entry.link) ? "Or tap the Tangem notification on your phone." : "Open Tangem, or tap the Tangem notification on your phone.";
 
   // ---- Prices ----
 
@@ -1385,17 +1377,17 @@ export function createBot({ token, ownerId, coingecko: cg }) {
           `${words.this} buy is ready. Approve any day to start again.`,
           "",
           trade,
-          approveBlock(entry),
+          approveLine(entry),
         ].join("\n");
       } else {
         text = [
           ...(wasExpired ? ["Your last request had expired, so here's a new one."] : []),
           "🟡 Your buy is ready",
           trade,
-          approveBlock(entry),
+          approveLine(entry),
         ].join("\n");
       }
-      const msg = await sendWithLink(text, entry.link).catch((err) => {
+      const msg = await bot.api.sendMessage(ownerId, text, { ...html, reply_markup: approveKeyboard(entry) }).catch((err) => {
         console.error("Buy message failed:", err.message);
         return null;
       });
@@ -1426,7 +1418,11 @@ export function createBot({ token, ownerId, coingecko: cg }) {
     async buyMissed(entry, plan) {
       if (!entry.messageId) return;
       const that = F.periodWords(plan.schedule.freq).that;
-      await edit(entry.messageId, `Missed: your ${sym(entry)} buy for ${that} wasn't approved in time. If you still approve it in Tangem, it counts when it completes.\n${approveBlock(entry)}`);
+      await edit(
+        entry.messageId,
+        `Missed: your ${sym(entry)} buy for ${that} wasn't approved in time. If you still approve it in Tangem, it counts when it completes.\n${approveLine(entry)}`,
+        approveKeyboard(entry),
+      );
     },
 
     async buyExpired(entry) {
@@ -1443,8 +1439,9 @@ export function createBot({ token, ownerId, coingecko: cg }) {
 
     async reminder(entry) {
       if (entry.reminderMessageId) await bot.api.deleteMessage(ownerId, entry.reminderMessageId).catch(() => {});
-      const text = [`🔔 Your ${sym(entry)} buy is still waiting`, approveBlock(entry), "Price changed a lot?"].join("\n");
-      const msg = await sendWithLink(text, entry.link, new InlineKeyboard().text("Get a fresh price", `fr:${entry.id}`)).catch((err) => {
+      const text = [`🔔 Your ${sym(entry)} buy is still waiting`, "Price changed a lot? Get a fresh price below.", approveLine(entry)].join("\n");
+      const kb = approveKeyboard(entry, new InlineKeyboard().text("Get a fresh price", `fr:${entry.id}`));
+      const msg = await bot.api.sendMessage(ownerId, text, { ...html, reply_markup: kb }).catch((err) => {
         console.error("Reminder failed:", err.message);
         return null;
       });

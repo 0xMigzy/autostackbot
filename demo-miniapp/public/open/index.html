@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <meta name="robots" content="noindex" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self'; base-uri 'none'; form-action 'none'"
+    />
+    <title>Opening Tangem… · AutoStack</title>
+    <link rel="icon" type="image/png" href="../brand/sized/icon-white-24@3x.png" />
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        background: #0a0a0b;
+        color: #ffffff;
+        font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+        text-align: center;
+      }
+      main {
+        width: 100%;
+        max-width: 360px;
+        display: grid;
+        gap: 20px;
+        justify-items: center;
+      }
+      .icon {
+        width: 64px;
+        height: 64px;
+        border-radius: 18px;
+        background: #161618;
+        display: grid;
+        place-items: center;
+      }
+      h1 {
+        margin: 0;
+        font-size: 22px;
+        font-weight: 600;
+      }
+      a.button {
+        display: block;
+        width: 100%;
+        padding: 16px;
+        border-radius: 16px;
+        background: #ffffff;
+        color: #0a0a0b;
+        font-weight: 600;
+        font-size: 17px;
+        text-decoration: none;
+      }
+      a.button:focus-visible {
+        outline: 3px solid #30d158;
+        outline-offset: 3px;
+      }
+      p {
+        margin: 0;
+        color: #8e8e93;
+        font-size: 15px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="icon">
+        <img
+          src="../brand/sized/icon-white-24@1x.png"
+          srcset="../brand/sized/icon-white-24@1x.png 1x, ../brand/sized/icon-white-24@2x.png 2x, ../brand/sized/icon-white-24@3x.png 3x"
+          width="22"
+          height="24"
+          alt="AutoStack"
+        />
+      </div>
+      <h1 id="status" role="status">Opening Tangem…</h1>
+      <a id="open" class="button" href="#" hidden>Open Tangem</a>
+      <p id="hint" hidden>Didn't open? Tap the Tangem notification on your phone.</p>
+    </main>
+    <script type="module" src="./open.js"></script>
+  </body>
+</html>

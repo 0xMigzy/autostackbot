@@ -5,7 +5,9 @@ AutoStack is a Telegram bot that buys crypto for you on a schedule from your Tan
 so over time you pay about the average price.
 
 When a buy is due, AutoStack gets Tangem's best price and prepares the buy in Tangem. You get a message
-("Your buy is ready") and a Tangem notification; open Tangem and tap your card to approve.
+("Your buy is ready") with an **Approve in Tangem** button, plus a Tangem notification; open Tangem and tap your
+card to approve. (Telegram buttons only take web links, so the button opens a tiny page,
+`https://0xmigzy.github.io/autostackbot/open/`, that only ever forwards to the Tangem app. No tracking.)
 
 > **Run at your own risk. Not financial advice. Start with small amounts. AutoStack never signs: you approve
 > every buy in Tangem. Not affiliated with Tangem.**
@@ -133,4 +135,5 @@ None of these are committed to git.
 - `npm run inspect`: saves the Tangem MCP tool schemas to `tangem-schemas.json`
 - `npm run brand`: exports the bot picture (`autostack-avatar-512.png`) and the Mini App photo (`autostack-app-640x360.png`)
   into `demo-miniapp/public/brand/` from the brand originals
-- `demo-miniapp/`: the demo Mini App (React + Vite), see its own README
+- `demo-miniapp/`: the demo Mini App (React + Vite), see its own README. `demo-miniapp/public/open/` is the
+  "Approve in Tangem" redirect page; its link rules (`link.js`) are shared with the bot.
