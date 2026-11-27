@@ -2,7 +2,9 @@ node_modules
 plans.json
 history.json
 prices.json
+coins.json
 tangem-schemas.json
+cache/
 .env
 .env.*
 !.env.example

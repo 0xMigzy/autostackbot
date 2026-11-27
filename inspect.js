@@ -1,6 +1,6 @@
 // Dumps tool input schemas and resources to tangem-schemas.json. Calls no tools.
 import { writeFile } from "node:fs/promises";
-import { getTangemClient, closeTangemClient } from "./tangem.js";
+import { getTangemClient, closeTangemClient } from "./src/tangem.js";
 
 const OUT_FILE = "tangem-schemas.json";
 const RESOURCE_URIS = [

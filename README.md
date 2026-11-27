@@ -1,70 +1,107 @@
-# AutoStackBot
+# AutoStack
 
-AutoStackBot is a Telegram bot for automatic crypto buys from your Tangem wallet:
+AutoStack is a Telegram bot that buys crypto for you on a schedule from your Tangem wallet, for example
+10 USDC of HYPE every Monday at 09:00. It's dollar-cost averaging (DCA): a fixed amount on a schedule,
+so over time you pay about the average price.
 
-- **DCA (recurring) buys:** buy a fixed amount every N minutes, hours, days or weeks, e.g. `/dca 10 USDC ETH 7d`.
-- **Limit buys:** check the price every minute and buy once you would receive at least your minimum,
-  e.g. `/limit 10 USDC BTC 0.0003`.
+When a buy is due, AutoStack gets Tangem's best price and prepares the buy in Tangem. You get a message
+("Your buy is ready") and a Tangem notification; open Tangem and tap your card to approve.
 
-It works with any token pair Tangem Express can swap, as long as both tokens are in your Tangem wallet.
-For each buy it asks every Express provider for a quote, picks the one that gives you the most, and prepares
-the buy in Tangem. The bot sends you the amounts, the provider and an "Approve in Tangem" link, and the
-Tangem app notifies you. When the buy completes or fails, the bot tells you.
+**AutoStack never signs: you approve every buy in Tangem.**
 
-**AutoStackBot never signs: you approve every buy in the Tangem app.**
+**This isn't financial advice.** AutoStack's alerts are information only.
 
-Safety limits:
+AutoStack works with Tangem but is not affiliated with Tangem.
 
-- At most 3 prepared buys per day, across all plans.
-- `/pauseall` stops every plan at once; nothing is prepared while a plan or all plans are paused.
-- A buy is prepared once and never retried automatically. If preparing fails, the plan stops and the bot tells you.
-- Everything is paid out to your own address for that token.
-- The bot answers only your Telegram account and ignores everyone else.
+<img src="samples/goal-progress.png" alt="AutoStack share card" width="320">
 
 ## Setup
 
 1. Install Node.js 20.12 or newer from <https://nodejs.org>.
-2. **Create the bot:** in Telegram, open [@BotFather](https://t.me/BotFather), send `/newbot`, pick a name
-   (e.g. AutoStackBot) and a username ending in `bot`. BotFather replies with a token like `123456789:AA…`.
-3. **Get your user ID:** open [@userinfobot](https://t.me/userinfobot) and send any message. It replies with
-   your numeric ID.
-4. **Create `.env`:** copy `.env.example` to `.env` and fill in both values:
+2. **Create your bot:** in Telegram, open [@BotFather](https://t.me/BotFather), send `/newbot`, pick a name
+   (e.g. AutoStack) and a username ending in `bot`. BotFather replies with a token like `123456789:AA…`.
+3. **Inline mode (optional, for posting share cards from any chat):** in @BotFather send `/setinline`,
+   pick your bot and type a placeholder such as `Share my AutoStack card`.
+4. **Get your user ID:** open [@userinfobot](https://t.me/userinfobot) and send any message; it replies with your numeric ID.
+5. **Get a CoinGecko key:** create a free Demo API key at <https://www.coingecko.com/en/api/pricing>.
+   AutoStack stays well inside the free plan (10,000 calls a month): prices are fetched in one batched call,
+   cached for 5 minutes, and only for /balance, /markets, plan setup and the hourly price-dip check.
+6. **Create `.env`:** copy `.env.example` to `.env` and fill in:
 
    ```
    TELEGRAM_BOT_TOKEN=<token from BotFather>
    TELEGRAM_OWNER_ID=<your numeric user ID>
+   COINGECKO_API_KEY=<your CoinGecko Demo key>
+   TZ=Europe/London
    ```
 
-   `.env` holds secrets: never share or commit it (it is in `.gitignore`).
-5. Open your bot in Telegram and press **Start**, so it is allowed to message you.
-6. In this folder, run:
+   `TZ` is the time zone for schedules and messages. `.env` holds secrets: never share or commit it.
+7. Open your bot in Telegram and press **Start**, so it is allowed to message you.
+8. In this folder, run:
 
    ```
    npm install
    npm start
    ```
 
-7. **QR login:** a browser opens with a QR code. Scan it with your own Tangem app to log in.
-   Then the bot starts and sends you "🟢 AutoStackBot is online".
+9. **QR login:** a browser opens with a QR code. Scan it with your own Tangem app to log in.
+   AutoStack then sends you "🟢 AutoStack is online".
 
-Keep the terminal open: plans only run while AutoStackBot is running. Press Ctrl+C to stop; the bot sends
-"🔴 AutoStackBot is offline". If the Tangem login expires, the bot tells you: restart AutoStackBot and scan the QR.
+Keep the terminal open: plans only run while AutoStack is running. Ctrl+C stops it.
+If the Tangem login expires, AutoStack tells you: restart AutoStack and scan the QR.
 
 ## Commands
 
 | Command | What it does |
 | --- | --- |
-| `/wallet` | Your tokens and balances |
-| `/quote 10 USDC SOL` | Best price now, the provider, and how many providers quoted |
-| `/dca 10 USDC ETH 7d` | Buy every 7 days (`30m`, `12h`, `7d`, `1w`, …) |
-| `/limit 10 USDC BTC 0.0003` | Buy once 10 USDC gets you at least 0.0003 BTC |
-| `/plans` | Each plan with Run now · Edit size · Pause/Resume · Delete |
-| `/history` | Last 10 buys and their status |
-| `/pauseall`, `/resumeall` | Pause or resume every plan |
+| `/start` | Welcome and main menu |
+| `/balance` | Your wallet in dollars, per token and network |
+| `/markets` | Coins you can buy with your USDC, with prices; tap one to set up a plan, or search for more |
+| `/plans` | Your plans: progress, streak, next buy; buy now, edit, pause, restart or delete |
+| `/history` | Your last buys, a summary per coin, and a CSV export |
+| `/settings` | Reminders, quiet hours, low USDC alert, amounts on share cards, start over |
+| `/pause` | Pause or resume everything |
+| `/help` | How AutoStack works |
 
-Tokens are given by symbol. If a symbol is on several networks in your wallet, the bot asks which one.
-A new size from "Edit size" applies from the next buy.
+**Setting up a plan** happens in one message: amount, how often (daily, weekly, monthly, every X days),
+day and time (09:00 by default), when to stop (never, after X buys, on a date, or at a goal in coins or dollars)
+and which USDC to pay with. The summary shows about how much you get each time and when you'll reach your goal.
 
-Your plans and prepared buys are saved in `plans.json` and `history.json` in this folder.
+**Streaks** count the days, weeks or months in a row with a completed buy. Approving late in the period counts;
+paused periods don't break a streak.
 
-`npm run inspect` saves the Tangem MCP tool schemas to `tangem-schemas.json` (for development).
+**Reminders:** a buy waiting for approval gets a reminder every 6 hours by default, never during quiet hours.
+If the price changed a lot, tap "Get a fresh price".
+
+**Alerts** (information only): not enough USDC the day before a buy; a coin 10% or more below your average buy
+price; a cheaper way to pay when you hold USDC on another network.
+
+**Share cards:** tap Share to get a 1080×1080 image of your goal and streak (no amounts unless you turn them on
+in /settings). Post it from any chat by typing `@YourBotName ` with inline mode on. Examples are in `samples/`.
+
+**Adding coins:** /markets → Search. AutoStack shows matches with their network and contract, and the CoinGecko page
+so you can check it's the right coin before tapping Add. Coins are always identified by network and contract
+address, never by symbol alone. They're saved in `coins.json`.
+
+## Safety
+
+- A buy is prepared in Tangem only once per scheduled period, or when you tap Buy now or Get a fresh price.
+  It is never retried automatically. If preparing a buy fails, the plan pauses and AutoStack tells you.
+- Nothing is prepared while a plan, or everything, is paused.
+- At most 3 new buy requests per day, across all plans.
+- A plan never gets a second scheduled buy while one is still waiting for approval.
+- Everything is paid out to your own address in your Tangem wallet.
+- AutoStack answers only your Telegram account and ignores everyone else. Messages sent while it was offline are ignored.
+- The bot token and API keys are replaced with `***` in logs and errors.
+
+## Files
+
+Your data stays in this folder: `plans.json` (plans and settings), `history.json` (every buy), `coins.json`
+(coins you can buy), `prices.json` (price cache and API call count) and `cache/logos/` (coin logos).
+None of these are committed to git.
+
+## Development
+
+- `npm test`: unit tests (schedules, forecasts, streaks, reminders, alerts, CoinGecko budget, share cards)
+- `npm run samples`: regenerates the sample share cards in `samples/`
+- `npm run inspect`: saves the Tangem MCP tool schemas to `tangem-schemas.json`

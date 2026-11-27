@@ -1,11 +1,12 @@
 {
-  "name": "autostackbot",
+  "name": "autostack",
   "version": "1.0.0",
-  "description": "AutoStackBot: Telegram bot for recurring (DCA) and limit buys from your Tangem wallet via Tangem Express",
-  "main": "index.js",
+  "description": "AutoStack: a Telegram bot for weekly crypto buys from your Tangem wallet. You approve every buy in Tangem.",
   "scripts": {
     "start": "node index.js",
-    "inspect": "node inspect.js"
+    "inspect": "node inspect.js",
+    "test": "node --test",
+    "samples": "node scripts/samples.js"
   },
   "keywords": [],
   "author": "",
@@ -13,9 +14,12 @@
   "type": "module",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",
-    "grammy": "^1.48.0"
+    "@napi-rs/canvas": "^1.2.1",
+    "grammy": "^1.48.0",
+    "luxon": "^3.7.2"
   },
   "engines": {
     "node": ">=20.12"
-  }
+  },
+  "main": "index.js"
 }
