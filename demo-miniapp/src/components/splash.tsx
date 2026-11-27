@@ -50,7 +50,7 @@ export function Splash() {
       )}
     >
       <div className="motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-95 motion-safe:duration-500">
-        <Logo className="h-auto w-40" />
+        <Logo variant="splash" />
       </div>
     </div>
   );

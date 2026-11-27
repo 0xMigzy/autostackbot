@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { BottomNav, type Tab } from "@/components/bottom-nav";
-import { BrandFilter } from "@/components/brand";
 import { BuySheet, type BuyFlow } from "@/components/buy-sheet";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { DemoBar } from "@/components/demo-bar";
@@ -160,7 +159,6 @@ export default function App() {
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col overflow-x-clip">
-      <BrandFilter />
       <DemoBar />
       {setup ? (
         <main className="flex-1">

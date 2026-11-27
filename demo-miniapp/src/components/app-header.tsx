@@ -32,13 +32,13 @@ export function AppHeader({ title, onBack, onReset }: AppHeaderProps) {
       )}
       {title ? (
         <div className="flex min-w-0 flex-1 items-center gap-2.5">
-          <BrandIcon className="size-6" />
+          <BrandIcon />
           <h1 className="truncate text-xl font-semibold">{title}</h1>
         </div>
       ) : (
         <div className="flex min-w-0 flex-1 flex-col items-start gap-1">
           <h1 className="contents">
-            <Logo className="h-8" />
+            <Logo variant="header" />
           </h1>
           <p className="text-muted-foreground text-xs">for Tangem wallets</p>
         </div>
