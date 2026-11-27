@@ -1,7 +1,7 @@
 # AutoStack
 
 AutoStack is a Telegram bot that buys crypto for you on a schedule from your Tangem wallet, for example
-10 USDC of HYPE every Monday at 09:00. It's dollar-cost averaging (DCA): a fixed amount on a schedule,
+10 USDC of HYPE every day at 09:00. It's dollar-cost averaging (DCA): a fixed amount on a schedule,
 so over time you pay about the average price.
 
 When a buy is due, AutoStack gets Tangem's best price and prepares the buy in Tangem. You get a message

@@ -69,13 +69,16 @@ export type DemoAction =
   | { type: "startBuy"; buy: Buy }
   | { type: "completeBuy"; buyId: string; at: string };
 
-export const STORAGE_KEY = "autostack-demo-v1";
+export const STORAGE_KEY = "autostack-demo-v2";
+/** Saved demos from the weekly example; dropped so everyone starts from the daily one. */
+const OLD_STORAGE_KEYS = ["autostack-demo-v1"];
 
-const local = (y: number, m: number, d: number, h: number, min: number) =>
-  new Date(y, m - 1, d, h, min).toISOString();
+/** `days` days before `now` (0 = today) at hh:mm local time, as ISO. */
+const daysAgo = (now: Date, days: number, h: number, min: number) =>
+  new Date(now.getFullYear(), now.getMonth(), now.getDate() - days, h, min).toISOString();
 
-/** The starting point of the demo, matching the bot's example data. */
-export function seedState(): DemoState {
+/** The starting point of the demo: 10 USDC of HYPE every day at 09:00, dated relative to today. */
+export function seedState(now: Date = new Date()): DemoState {
   const planId = "plan-hype";
   return {
     version: 1,
@@ -85,49 +88,49 @@ export function seedState(): DemoState {
         id: planId,
         coin: "HYPE",
         amount: 10,
-        schedule: { kind: "weekly", days: [0] },
+        schedule: { kind: "daily" },
         time: "09:00",
         stop: { kind: "goal", unit: "coin", value: 1 },
         status: "active",
-        createdAt: local(2026, 10, 12, 18, 30),
-        coveredUntil: local(2026, 11, 23, 9, 0),
+        createdAt: daysAgo(now, 4, 18, 30),
+        coveredUntil: daysAgo(now, 1, 9, 0),
         streak: 2,
         bestStreak: 3,
       },
     ],
     buys: [
       {
-        id: "buy-2026-11-23",
+        id: "buy-1",
         planId,
         coin: "HYPE",
         amount: 10,
         coinAmount: 0.159,
         price: roundTo(10 / 0.159, 4),
-        dueAt: local(2026, 11, 23, 9, 0),
+        dueAt: daysAgo(now, 1, 9, 0),
         kind: "scheduled",
         status: "done",
-        approvedAt: local(2026, 11, 23, 9, 4),
+        approvedAt: daysAgo(now, 1, 9, 4),
       },
       {
-        id: "buy-2026-11-16",
+        id: "buy-2",
         planId,
         coin: "HYPE",
         amount: 10,
         coinAmount: 0.158,
         price: roundTo(10 / 0.158, 4),
-        dueAt: local(2026, 11, 16, 9, 0),
+        dueAt: daysAgo(now, 2, 9, 0),
         kind: "scheduled",
         status: "done",
-        approvedAt: local(2026, 11, 18, 12, 41),
+        approvedAt: daysAgo(now, 2, 18, 41),
       },
       {
-        id: "buy-2026-11-09",
+        id: "buy-3",
         planId,
         coin: "HYPE",
         amount: 10,
         coinAmount: 0,
         price: null,
-        dueAt: local(2026, 11, 9, 9, 0),
+        dueAt: daysAgo(now, 3, 9, 0),
         kind: "scheduled",
         status: "missed",
         approvedAt: null,
@@ -292,8 +295,9 @@ function isValidState(v: unknown): v is DemoState {
  * app was closed are completed, as the demo always completes them on its own.
  */
 export function loadState(now: Date): DemoState {
-  let state = seedState();
+  let state = seedState(now);
   try {
+    for (const key of OLD_STORAGE_KEYS) window.localStorage.removeItem(key);
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed: unknown = JSON.parse(raw);

@@ -50,7 +50,7 @@ export function finishForecast(
   return date ? { buys: left, date } : null;
 }
 
-/** e.g. "10 USDC every Monday, about 0.158 HYPE each time, you'll reach 1 HYPE around 11 Jan (7 buys)." */
+/** e.g. "10 USDC every day, about 0.152 HYPE each time, you'll reach 1 HYPE around 3 Dec (7 buys)." */
 export function planSummary(draft: PlanDraft, price: number, now: Date): string {
   const perBuy = draft.amount / price;
   const head = `${draft.amount} USDC ${describeSchedule(draft.schedule)}, about ${formatAsset(perBuy, draft.coin)} each time`;

@@ -68,7 +68,7 @@ export function PlanSetupScreen({ coin, onBack, onStart, onReset }: PlanSetupScr
 
   const [amountChoice, setAmountChoice] = useState<AmountChoice>("10");
   const [otherAmount, setOtherAmount] = useState("");
-  const [frequency, setFrequency] = useState<Frequency>("weekly");
+  const [frequency, setFrequency] = useState<Frequency>("daily");
   const [weekDays, setWeekDays] = useState<Weekday[]>([0]);
   const [monthDay, setMonthDay] = useState<Weekday>(0);
   const [everyDays, setEveryDays] = useState(3);

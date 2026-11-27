@@ -14,7 +14,7 @@ import { goalProgress, planStats, type Plan } from "@/lib/demo-store";
 import { formatAmount, formatAsset, formatDay, formatUsd } from "@/lib/format";
 import { finishForecast } from "@/lib/plan-summary";
 import { usePrices } from "@/lib/prices";
-import { countdown, nextBuy, streakUnit, WEEKDAY_LONG, weekdayOf } from "@/lib/schedule";
+import { countdown, nextBuy, streakUnit, toDateKey, WEEKDAY_LONG, weekdayOf } from "@/lib/schedule";
 import { cn } from "@/lib/utils";
 
 interface HomeScreenProps {
@@ -184,7 +184,13 @@ function PlanOverview({ plan, holdRing, now }: { plan: Plan; holdRing: boolean; 
             {next ? (
               <>
                 <p className="font-semibold tabular-nums">
-                  {WEEKDAY_LONG[weekdayOf(next)]} {plan.time} · {plan.amount} USDC → {plan.coin}
+                  {toDateKey(next) === toDateKey(now)
+                    ? "Today"
+                    : toDateKey(next) ===
+                        toDateKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1))
+                      ? "Tomorrow"
+                      : WEEKDAY_LONG[weekdayOf(next)]}{" "}
+                  {plan.time} · {plan.amount} USDC → {plan.coin}
                 </p>
                 <p className="text-muted-foreground text-sm tabular-nums">
                   {countdown(next, now)} · {formatDay(next, now)}
