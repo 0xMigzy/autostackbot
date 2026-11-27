@@ -17,7 +17,15 @@ AutoStack works with Tangem but is not affiliated with Tangem.
 
 ## Setup
 
-1. Install Node.js 20.12 or newer from <https://nodejs.org>.
+1. Install Node.js 20.12 or newer from <https://nodejs.org>, then get the code:
+
+   ```
+   git clone https://github.com/0xMigzy/autostackbot.git
+   cd autostackbot
+   ```
+
+   (No git? On the GitHub page, click **Code → Download ZIP**, unzip it and open a terminal in that folder.)
+   Each person runs their own copy, with their own bot, their own Tangem wallet and their own keys.
 2. **Create your bot:** in Telegram, open [@BotFather](https://t.me/BotFather), send `/newbot`, pick a name
    (e.g. AutoStack) and a username ending in `bot`. BotFather replies with a token like `123456789:AA…`.
 3. **Inline mode (optional, for posting share cards from any chat):** in @BotFather send `/setinline`,
