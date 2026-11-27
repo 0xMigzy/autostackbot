@@ -19,12 +19,13 @@ const AMOUNT_RE = /^\d+(?:\.\d+)?$/;
 
 export const COMMANDS = [
   { command: "start", description: "Welcome and main menu" },
-  { command: "balance", description: "Your wallet in dollars" },
-  { command: "markets", description: "Coins you can buy and set up" },
+  { command: "portfolio", description: "Your wallet in dollars" },
+  { command: "markets", description: "Coins you can buy, with prices" },
+  { command: "dca", description: "Set up a new DCA plan" },
   { command: "plans", description: "Your plans" },
   { command: "history", description: "Your buys" },
-  { command: "settings", description: "Reminders, alerts, share cards" },
   { command: "pause", description: "Pause or resume everything" },
+  { command: "settings", description: "Reminders, alerts, share cards" },
   { command: "help", description: "How AutoStack works" },
 ];
 
@@ -35,18 +36,20 @@ const DCA_TEXT = [
   "",
   "This isn't financial advice.",
 ].join("\n");
+export const DISCLAIMER =
+  "Run at your own risk. Not financial advice. Start with small amounts. AutoStack never signs: you approve every buy in Tangem. Not affiliated with Tangem.";
 const HELP = [
   "AutoStack buys crypto for you on a schedule, from your Tangem wallet.",
   "",
-  "/markets: pick a coin and set up a plan",
+  "/portfolio: your wallet in dollars",
+  "/markets: coins you can buy, with prices",
+  "/dca: set up a new DCA plan",
   "/plans: see, pause or change your plans",
-  "/balance: your wallet in dollars",
   "/history: your buys, with a summary per coin",
-  "/settings: reminders, alerts and share cards",
   "/pause: pause or resume everything",
+  "/settings: reminders, alerts and share cards",
   "",
-  "AutoStack never signs: you approve every buy in Tangem.",
-  "This isn't financial advice.",
+  DISCLAIMER,
 ].join("\n");
 
 const html = { parse_mode: "HTML", link_preview_options: { is_disabled: true } };
@@ -160,14 +163,14 @@ export function createBot({ token, ownerId, coingecko: cg }) {
 
   const mainMenu = () =>
     new InlineKeyboard()
-      .text("Balance", "nav:balance").text("Markets", "nav:markets").row()
+      .text("Portfolio", "nav:portfolio").text("Markets", "nav:markets").row()
       .text("My plans", "nav:plans").text("History", "h:all:0").row()
       .text("Settings", "nav:settings").text("What's DCA?", "nav:dca");
 
   const welcomeScreen = () => ({ text: WELCOME, keyboard: mainMenu(), home: true });
   const dcaScreen = () => ({ text: DCA_TEXT, keyboard: new InlineKeyboard() });
 
-  async function balanceScreen() {
+  async function portfolioScreen() {
     const tokens = await W.loadWallet();
     const balances = await W.loadBalances(tokens);
     const priced = await getPrices([...new Set(tokens.map(priceIdOf))]);
@@ -185,7 +188,7 @@ export function createBot({ token, ownerId, coingecko: cg }) {
     });
     rows.sort((a, b) => b.sort - a.sort);
     return {
-      text: [`<b>Your balance: ${F.usd(total)}</b>`, "", ...rows.map((r) => r.line), "", pricesFooter(priced)].join("\n"),
+      text: [`<b>Your portfolio: ${F.usd(total)}</b>`, "", ...rows.map((r) => r.line), "", pricesFooter(priced)].join("\n"),
       keyboard: new InlineKeyboard().text("Markets", "nav:markets").text("My plans", "nav:plans"),
     };
   }
@@ -211,7 +214,8 @@ export function createBot({ token, ownerId, coingecko: cg }) {
     return keys;
   }
 
-  async function marketsScreen() {
+  /** Coins buyable with my USDC, with prices. As /dca it's the coin picker for a new plan. */
+  async function marketsScreen({ forPlan = false } = {}) {
     const keys = await buyableKeys();
     const coins = C.usableCoins().filter((c) => keys.has(c.key));
     const unavailable = C.usableCoins().filter((c) => !C.isUsdc(c) && !keys.has(c.key));
@@ -226,10 +230,11 @@ export function createBot({ token, ownerId, coingecko: cg }) {
       if (i % 3 === 2) keyboard.row();
     });
     keyboard.row().text("Search", "m:search");
+    if (forPlan) keyboard.text("What's DCA?", "nav:dca");
     return {
       text: [
-        "<b>Markets</b>",
-        "Tap a coin to set up a plan.",
+        forPlan ? "<b>New DCA plan</b>" : "<b>Markets</b>",
+        forPlan ? "Pick the coin you want to buy on a schedule." : "Tap a coin to set up a plan.",
         "",
         ...(lines.length ? lines : ["No coins can be bought with your USDC right now."]),
         ...(unavailable.length ? ["", `<i>Not available right now: ${F.esc(unavailable.map((c) => c.symbol).join(", "))}</i>`] : []),
@@ -710,9 +715,13 @@ export function createBot({ token, ownerId, coingecko: cg }) {
     return show(ctx, welcomeScreen());
   });
   bot.command("help", (ctx) => ctx.reply(HELP, { reply_markup: withMenu() }));
-  bot.command("balance", async (ctx) => {
+  bot.command("portfolio", async (ctx) => {
     await ctx.replyWithChatAction("typing");
-    return show(ctx, await balanceScreen());
+    return show(ctx, await portfolioScreen());
+  });
+  bot.command("dca", async (ctx) => {
+    await ctx.replyWithChatAction("typing");
+    return show(ctx, await marketsScreen({ forPlan: true }));
   });
   bot.command("markets", async (ctx) => {
     await ctx.replyWithChatAction("typing");
@@ -731,7 +740,7 @@ export function createBot({ token, ownerId, coingecko: cg }) {
   const SCREENS = {
     start: welcomeScreen,
     dca: dcaScreen,
-    balance: balanceScreen,
+    portfolio: portfolioScreen,
     markets: marketsScreen,
     plans: plansScreen,
     settings: settingsScreen,
@@ -742,7 +751,7 @@ export function createBot({ token, ownerId, coingecko: cg }) {
     const screen = SCREENS[name];
     await ctx.answerCallbackQuery();
     if (!screen) return;
-    if (name === "balance" || name === "markets") await ctx.replyWithChatAction("typing");
+    if (name === "portfolio" || name === "markets") await ctx.replyWithChatAction("typing");
     input = null;
     const { text, keyboard, home } = await screen();
     if (fresh) await ctx.reply(text, { ...html, reply_markup: home ? keyboard : withMenu(keyboard) });

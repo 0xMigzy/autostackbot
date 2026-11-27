@@ -1,42 +1,35 @@
 // npm start: Tangem login (QR) → bot, scheduler and alerts. Ctrl+C stops cleanly.
-import { IANAZone } from "luxon";
+import { existsSync } from "node:fs";
 import { addSecret, installConsoleRedaction } from "./src/redact.js";
 import { closeTangemClient, getTangemClient } from "./src/tangem.js";
 import { createCoinGecko } from "./src/coingecko.js";
 import { coinByKey, fillLogoUrls, isUsdc, loadCoins } from "./src/coins.js";
 import { loadState, readJson, writeJson } from "./src/store.js";
+import { DEFAULT_TZ, envProblems, readEnv } from "./src/env.js";
 import * as engine from "./src/engine.js";
 import { COMMANDS, createBot } from "./src/bot/bot.js";
 
-try {
-  process.loadEnvFile(".env");
-} catch {
-  console.error("Missing .env: copy .env.example to .env and fill it in (see README).");
+const env = readEnv();
+const problems = envProblems(env);
+if (problems.length) {
+  console.error(env ? `Run npm run setup first (missing or not valid: ${problems.join(", ")}).` : "Run npm run setup first.");
   process.exit(1);
 }
 
-const token = process.env.TELEGRAM_BOT_TOKEN?.trim();
-const ownerId = Number(process.env.TELEGRAM_OWNER_ID?.trim());
-const coingeckoKey = process.env.COINGECKO_API_KEY?.trim();
-const zone = process.env.TZ?.trim() || "Europe/London";
+const token = env.get("TELEGRAM_BOT_TOKEN");
+const ownerId = Number(env.get("TELEGRAM_OWNER_ID"));
+const coingeckoKey = env.get("COINGECKO_API_KEY");
+const zone = env.get("TZ") || DEFAULT_TZ;
 addSecret(token);
 addSecret(coingeckoKey);
 installConsoleRedaction();
 
-if (!token || !Number.isSafeInteger(ownerId) || ownerId <= 0) {
-  console.error("Set TELEGRAM_BOT_TOKEN and TELEGRAM_OWNER_ID (your numeric Telegram user ID) in .env (see README).");
-  process.exit(1);
+// No plans.json yet means AutoStack has never signed in to Tangem from this folder.
+if (!existsSync("plans.json")) {
+  console.log("First start: a page with a QR code will open in your browser; scan it with the Tangem app on your phone to connect your wallet.");
+} else {
+  console.log("Connecting to Tangem (scan the QR code with your Tangem app if a page opens).");
 }
-if (!coingeckoKey) {
-  console.error("Set COINGECKO_API_KEY in .env (a free CoinGecko Demo key, see README).");
-  process.exit(1);
-}
-if (!IANAZone.isValidZone(zone)) {
-  console.error(`TZ in .env must be a time zone like Europe/London (got "${zone}").`);
-  process.exit(1);
-}
-
-console.log("Logging in to Tangem: scan the QR code with your Tangem app if asked.");
 try {
   await getTangemClient();
 } catch (err) {

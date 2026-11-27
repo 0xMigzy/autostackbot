@@ -6,11 +6,12 @@
     "start": "node index.js",
     "inspect": "node inspect.js",
     "test": "node --test",
-    "samples": "node scripts/samples.js"
+    "samples": "node scripts/samples.js",
+    "setup": "node scripts/setup.js"
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "type": "module",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",

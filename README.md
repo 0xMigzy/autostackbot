@@ -7,11 +7,10 @@ so over time you pay about the average price.
 When a buy is due, AutoStack gets Tangem's best price and prepares the buy in Tangem. You get a message
 ("Your buy is ready") and a Tangem notification; open Tangem and tap your card to approve.
 
-**AutoStack never signs: you approve every buy in Tangem.**
+> **Run at your own risk. Not financial advice. Start with small amounts. AutoStack never signs: you approve
+> every buy in Tangem. Not affiliated with Tangem.**
 
-**This isn't financial advice.** AutoStack's alerts are information only.
-
-AutoStack works with Tangem but is not affiliated with Tangem.
+AutoStack's alerts are information only.
 
 <img src="samples/goal-progress.png" alt="AutoStack share card" width="320">
 
@@ -33,27 +32,26 @@ AutoStack works with Tangem but is not affiliated with Tangem.
 4. **Get your user ID:** open [@userinfobot](https://t.me/userinfobot) and send any message; it replies with your numeric ID.
 5. **Get a CoinGecko key:** create a free Demo API key at <https://www.coingecko.com/en/api/pricing>.
    AutoStack stays well inside the free plan (10,000 calls a month): prices are fetched in one batched call,
-   cached for 5 minutes, and only for /balance, /markets, plan setup and the hourly price-dip check.
-6. **Create `.env`:** copy `.env.example` to `.env` and fill in:
-
-   ```
-   TELEGRAM_BOT_TOKEN=<token from BotFather>
-   TELEGRAM_OWNER_ID=<your numeric user ID>
-   COINGECKO_API_KEY=<your CoinGecko Demo key>
-   TZ=Europe/London
-   ```
-
-   `TZ` is the time zone for schedules and messages. `.env` holds secrets: never share or commit it.
-7. Open your bot in Telegram and press **Start**, so it is allowed to message you.
-8. In this folder, run:
+   cached for 5 minutes, and only for /portfolio, /markets, plan setup and the hourly price-dip check.
+6. **Install and run setup:** in this folder, run:
 
    ```
    npm install
+   npm run setup
+   ```
+
+   Setup asks for your bot token, your Telegram user ID, your CoinGecko key and your time zone
+   (Europe/London unless you change it), checks them, and saves them in `.env`. Nothing is shown on screen.
+   `.env` holds secrets: never share or commit it. Run `npm run setup` again anytime to change a value.
+7. Open your bot in Telegram and press **Start**, so it is allowed to message you.
+8. Start AutoStack:
+
+   ```
    npm start
    ```
 
-9. **QR login:** a browser opens with a QR code. Scan it with your own Tangem app to log in.
-   AutoStack then sends you "🟢 AutoStack is online".
+9. **QR login (first start only):** a page with a QR code opens in your browser. Scan it with the Tangem app
+   on your phone to connect your wallet. AutoStack then sends you "🟢 AutoStack is online".
 
 Keep the terminal open: plans only run while AutoStack is running. Ctrl+C stops it.
 If the Tangem login expires, AutoStack tells you: restart AutoStack and scan the QR.
@@ -63,12 +61,13 @@ If the Tangem login expires, AutoStack tells you: restart AutoStack and scan the
 | Command | What it does |
 | --- | --- |
 | `/start` | Welcome and main menu |
-| `/balance` | Your wallet in dollars, per token and network |
-| `/markets` | Coins you can buy with your USDC, with prices; tap one to set up a plan, or search for more |
+| `/portfolio` | Your wallet in dollars, per token and network |
+| `/markets` | Coins you can buy with your USDC, with prices; search for more |
+| `/dca` | Set up a new DCA plan: pick a coin, amount, schedule and goal |
 | `/plans` | Your plans: progress, streak, next buy; buy now, edit, pause, restart or delete |
 | `/history` | Your last buys, a summary per coin, and a CSV export |
-| `/settings` | Reminders, quiet hours, low USDC alert, amounts on share cards, start over |
 | `/pause` | Pause or resume everything |
+| `/settings` | Reminders, quiet hours, low USDC alert, amounts on share cards, start over |
 | `/help` | How AutoStack works |
 
 **Setting up a plan** happens in one message: amount, how often (daily, weekly, monthly, every X days),
@@ -101,6 +100,10 @@ address, never by symbol alone. They're saved in `coins.json`.
 - Everything is paid out to your own address in your Tangem wallet.
 - AutoStack answers only your Telegram account and ignores everyone else. Messages sent while it was offline are ignored.
 - The bot token and API keys are replaced with `***` in logs and errors.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
 
 ## Files
 
